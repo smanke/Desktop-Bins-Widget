@@ -18,15 +18,28 @@ cd "$(dirname "$0")"
 APP_NAME="Desktop Bins Widget"
 APP_DIR=".build/app/${APP_NAME}.app"
 ZIP_PATH=".build/app/DesktopBinsWidget-notarize.zip"
-PROFILE="${NOTARY_PROFILE:-DesktopBinsWidget}"
+# Notarization credentials are account-level, not per-app, so an existing
+# profile from another project works fine. Use the first one that answers.
+resolve_profile() {
+  for candidate in "${NOTARY_PROFILE:-}" "DesktopBinsWidget" "DesktopBins"; do
+    [ -z "${candidate}" ] && continue
+    if xcrun notarytool history --keychain-profile "${candidate}" >/dev/null 2>&1; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PROFILE=$(resolve_profile || echo "")
 
 if [ ! -d "${APP_DIR}" ]; then
   echo "No app bundle at ${APP_DIR} — run ./build_app.sh first."
   exit 1
 fi
 
-if ! xcrun notarytool history --keychain-profile "${PROFILE}" >/dev/null 2>&1; then
-  echo "No stored notarization credentials named '${PROFILE}'."
+if [ -z "${PROFILE}" ]; then
+  echo "No stored notarization credentials found."
   echo "Run the store-credentials command in the header of this script first."
   exit 1
 fi

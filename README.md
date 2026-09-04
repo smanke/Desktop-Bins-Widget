@@ -39,7 +39,15 @@ open "/Applications/Desktop Bins Widget.app"
 
 Requires macOS 13+. Signs with a Developer ID identity when one is present
 (see `build_app.sh`), which keeps the app's identity stable across rebuilds.
-`./notarize.sh` submits and staples a build for sharing to other Macs.
+`./notarize.sh` submits and staples a build for sharing to other Macs, and
+`./make_dmg.sh` packages the stapled app into a signed, notarized `.dmg`
+with the usual drag-to-Applications layout.
+
+## Installing
+
+Download the `.dmg` from the [latest release](https://github.com/smanke/Desktop-Bins-Widget/releases),
+open it, and drag the app onto Applications. The image and the app inside are
+both notarized, so it opens without a Gatekeeper warning.
 
 ## Implementation notes
 
