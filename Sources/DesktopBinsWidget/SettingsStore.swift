@@ -14,6 +14,8 @@ final class SettingsStore: ObservableObject {
         static let panelOpacity = "panelOpacity"
         static let hideDesktopIcons = "hideDesktopIcons"
         static let requiresCommandToMove = "requiresCommandToMove"
+        static let checkForUpdatesAtLaunch = "checkForUpdatesAtLaunch"
+        static let skippedUpdateVersion = "skippedUpdateVersion"
     }
 
     static let defaultIconSize: Double = 48
@@ -49,6 +51,18 @@ final class SettingsStore: ObservableObject {
     /// the flag actually does, since the label reads the other way round.
     @Published var requiresCommandToMove: Bool { didSet { save() } }
 
+    /// Look for a newer release shortly after launch. Silent unless there is
+    /// something to install, so it can't turn into a dialog on every launch.
+    @Published var checkForUpdatesAtLaunch: Bool { didSet { save() } }
+
+    /// A version the user chose to skip. The launch check stays quiet about
+    /// it; asking again on every launch would just be nagging. Checking
+    /// manually still offers it.
+    var skippedUpdateVersion: String? {
+        get { UserDefaults.standard.string(forKey: Key.skippedUpdateVersion) }
+        set { UserDefaults.standard.set(newValue, forKey: Key.skippedUpdateVersion) }
+    }
+
     private init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
@@ -56,7 +70,8 @@ final class SettingsStore: ObservableObject {
             Key.showLabels: true,
             Key.panelOpacity: Self.defaultOpacity,
             Key.hideDesktopIcons: true,
-            Key.requiresCommandToMove: true
+            Key.requiresCommandToMove: true,
+            Key.checkForUpdatesAtLaunch: true
         ])
         launchAtLogin = LaunchAtLoginController.isEnabled
         iconSize = defaults.double(forKey: Key.iconSize)
@@ -64,6 +79,7 @@ final class SettingsStore: ObservableObject {
         panelOpacity = defaults.double(forKey: Key.panelOpacity)
         hideDesktopIcons = defaults.bool(forKey: Key.hideDesktopIcons)
         requiresCommandToMove = defaults.bool(forKey: Key.requiresCommandToMove)
+        checkForUpdatesAtLaunch = defaults.bool(forKey: Key.checkForUpdatesAtLaunch)
     }
 
     private func save() {
@@ -73,6 +89,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(panelOpacity, forKey: Key.panelOpacity)
         defaults.set(hideDesktopIcons, forKey: Key.hideDesktopIcons)
         defaults.set(requiresCommandToMove, forKey: Key.requiresCommandToMove)
+        defaults.set(checkForUpdatesAtLaunch, forKey: Key.checkForUpdatesAtLaunch)
     }
 
     /// Smallest a panel can be: one column of icons plus its insets, so a
@@ -92,5 +109,6 @@ final class SettingsStore: ObservableObject {
         panelOpacity = Self.defaultOpacity
         hideDesktopIcons = true
         requiresCommandToMove = true
+        checkForUpdatesAtLaunch = true
     }
 }

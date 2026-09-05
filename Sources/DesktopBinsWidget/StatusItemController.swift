@@ -69,8 +69,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let loginItem = menu.addItem(withTitle: "Open at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "", target: self)
         loginItem.state = settings.launchAtLogin ? .on : .off
 
-        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "", target: self)
-            .toolTip = "Download and install the latest release from GitHub, then restart."
+        let updateItem = menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "", target: self)
+        updateItem.toolTip = "Download and install the latest release from GitHub, then restart."
+
+        let autoUpdateItem = menu.addItem(withTitle: "Check for Updates at Launch", action: #selector(toggleLaunchUpdateCheck), keyEquivalent: "", target: self)
+        autoUpdateItem.state = settings.checkForUpdatesAtLaunch ? .on : .off
+        autoUpdateItem.toolTip = "Look for a newer release shortly after the app opens. You are only asked if one is found."
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",", target: self)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Desktop Bins Widget", action: #selector(quit), keyEquivalent: "q", target: self)
@@ -101,6 +105,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func toggleVisibility() { panelController.setAllVisible(!panelController.isVisible) }
     @objc private func toggleLaunchAtLogin() { SettingsStore.shared.launchAtLogin.toggle() }
     @objc private func checkForUpdates() { UpdateController.checkForUpdates() }
+    @objc private func toggleLaunchUpdateCheck() { SettingsStore.shared.checkForUpdatesAtLaunch.toggle() }
     @objc private func showSettings() { settingsWindowController.show() }
     @objc private func quit() { NSApp.terminate(nil) }
 

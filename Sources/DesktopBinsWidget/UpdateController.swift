@@ -24,23 +24,43 @@ enum UpdateController {
 
     // MARK: - Entry point
 
-    static func checkForUpdates() {
+    /// - Parameter silent: when true, say nothing unless there is an update
+    ///   to offer. Used for the check at launch, where reporting "up to date"
+    ///   or a network hiccup every time would just be noise.
+    static func checkForUpdates(silent: Bool = false) {
         Task { @MainActor in
             let current = AppInfo.version
             do {
                 let release = try await fetchLatestRelease()
                 guard isNewer(release.version, than: current) else {
-                    present(.upToDate(current: current))
+                    if !silent { present(.upToDate(current: current)) }
                     return
                 }
-                guard confirmInstall(newVersion: release.version, current: current) else { return }
+                // A version the user skipped is not raised again on its own.
+                if silent, SettingsStore.shared.skippedUpdateVersion == release.version {
+                    return
+                }
+                switch confirmInstall(newVersion: release.version, current: current, allowSkip: silent) {
+                case .cancel:
+                    return
+                case .skip:
+                    SettingsStore.shared.skippedUpdateVersion = release.version
+                    return
+                case .install:
+                    break
+                }
 
                 let stagedApp = try await downloadAndStage(release)
                 try verifySignature(of: stagedApp)
                 try installAndRelaunch(from: stagedApp)
                 // Control does not return: the app is replaced and restarted.
             } catch {
-                present(.failed(error.localizedDescription))
+                if silent {
+                    // Offline at launch is not worth interrupting anyone over.
+                    NSLog("DesktopBinsWidget: update check failed: \(error.localizedDescription)")
+                } else {
+                    present(.failed(error.localizedDescription))
+                }
             }
         }
     }
@@ -165,12 +185,20 @@ enum UpdateController {
         let staging = stagedApp.deletingLastPathComponent()
         let script = staging.appendingPathComponent("install.sh")
 
+        // The old bundle is moved aside rather than deleted, so a failed copy
+        // can put it back instead of leaving no app installed at all.
         let body = """
         #!/bin/sh
         # Wait for the running app to quit before replacing its bundle.
         while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done
-        /bin/rm -rf "\(destination)"
-        /bin/cp -R "\(stagedApp.path)" "\(destination)"
+        /bin/rm -rf "\(destination).old"
+        /bin/mv "\(destination)" "\(destination).old" 2>/dev/null
+        if /bin/cp -R "\(stagedApp.path)" "\(destination)"; then
+          /bin/rm -rf "\(destination).old"
+        else
+          /bin/rm -rf "\(destination)"
+          /bin/mv "\(destination).old" "\(destination)"
+        fi
         # Verified above, so clear the download flag to avoid a redundant prompt.
         /usr/bin/xattr -dr com.apple.quarantine "\(destination)" 2>/dev/null
         /usr/bin/open "\(destination)"
@@ -213,7 +241,13 @@ enum UpdateController {
 
     // MARK: - UI
 
-    private static func confirmInstall(newVersion: String, current: String) -> Bool {
+    enum ConfirmChoice {
+        case install
+        case cancel
+        case skip
+    }
+
+    private static func confirmInstall(newVersion: String, current: String, allowSkip: Bool) -> ConfirmChoice {
         let alert = NSAlert()
         alert.messageText = "Update to version \(newVersion)?"
         alert.informativeText = """
@@ -223,8 +257,14 @@ enum UpdateController {
         """
         alert.addButton(withTitle: "Update and Restart")
         alert.addButton(withTitle: "Not Now")
+        if allowSkip { alert.addButton(withTitle: "Skip This Version") }
         NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertFirstButtonReturn
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .install
+        case .alertThirdButtonReturn where allowSkip: return .skip
+        default: return .cancel
+        }
     }
 
     private static func present(_ outcome: UpdateOutcome) {

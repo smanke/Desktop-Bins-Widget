@@ -35,6 +35,7 @@ layer — widget-like in feel, fully interactive in practice.
 - Item count in the title bar can be turned off per bin
 - Optional Command-drag to move, so bins can't be nudged by accident
 - Updates itself from the menu bar, verifying the download before installing
+- Checks for a newer release at launch, silently unless there is one
 - Optional launch at login
 
 ## Installing
@@ -107,9 +108,18 @@ belonging to someone else is refused), and pass Gatekeeper assessment, which
 only succeeds if Apple notarized it. Any failure aborts and leaves the
 installed app untouched.
 
+The same check runs a few seconds after launch when "Check for Updates at
+Launch" is on, deliberately silent unless there is something to offer —
+reporting "up to date", or a failed network call, on every single launch
+would be noise rather than information. Declining an update offers "Skip This
+Version", which stops the launch check raising that version again; checking
+manually still offers it.
+
 The swap itself is handed to a detached shell script, because an app cannot
 replace and relaunch its own bundle while it is the one running: the script
-waits for the process to exit, replaces the bundle, and reopens it.
+waits for the process to exit, replaces the bundle, and reopens it. The old
+bundle is moved aside rather than deleted, so a failed copy restores it
+instead of leaving no app installed at all.
 
 ### Multiple displays
 

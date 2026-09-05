@@ -15,6 +15,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if store.bins.isEmpty {
             panelController.addBinAtCenterOfMainScreen()
         }
+
+        scheduleLaunchUpdateCheck()
+    }
+
+    /// Looks for a newer release shortly after launch rather than during it,
+    /// so startup isn't waiting on the network. Silent unless there is
+    /// something to offer.
+    private func scheduleLaunchUpdateCheck() {
+        guard SettingsStore.shared.checkForUpdatesAtLaunch else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            UpdateController.checkForUpdates(silent: true)
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

@@ -8,6 +8,9 @@ struct SettingsView: View {
             Toggle("Open Desktop Bins Widget at login", isOn: $settings.launchAtLogin)
                 .font(.system(size: 13, weight: .semibold))
 
+            Toggle("Check for updates when the app opens", isOn: $settings.checkForUpdatesAtLaunch)
+                .help("Looks for a newer release on GitHub a few seconds after launch. You are only asked if there is one.")
+
             Divider()
 
             VStack(alignment: .leading, spacing: 10) {
@@ -44,7 +47,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 430, height: 440)
+        .frame(width: 430, height: 480)
     }
 
     private func slider(label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double, suffix: String) -> some View {
