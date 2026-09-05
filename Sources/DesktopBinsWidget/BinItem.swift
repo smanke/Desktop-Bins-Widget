@@ -52,8 +52,24 @@ struct BinItem: Codable, Equatable, Identifiable {
         return FileManager.default.displayName(atPath: url.path)
     }
 
+    /// Follows an alias file through to what it points at.
+    ///
+    /// Keeping aliases to folders on the Desktop is common, and asking macOS
+    /// for an alias file's icon hands back the generic alias document rather
+    /// than the target's icon — so a folder alias looks like a blank page.
+    /// Resolving first is also what makes opening and revealing land on the
+    /// real item instead of the alias.
+    func resolvedTargetURL() -> URL? {
+        guard let url = resolveURL() else { return nil }
+        if let target = try? URL(resolvingAliasFileAt: url, options: [.withoutUI, .withoutMounting]),
+           FileManager.default.fileExists(atPath: target.path) {
+            return target
+        }
+        return url
+    }
+
     var icon: NSImage {
-        guard let url = resolveURL() else {
+        guard let url = resolvedTargetURL() else {
             return NSWorkspace.shared.icon(for: .item)
         }
         return NSWorkspace.shared.icon(forFile: url.path)

@@ -450,7 +450,7 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
 
     func panel(_ view: BinPanelView, didOpenItemAt index: Int) {
         guard let bin = store.bin(for: view.bin.id), bin.items.indices.contains(index) else { return }
-        guard let url = bin.items[index].resolveURL() else {
+        guard let url = bin.items[index].resolvedTargetURL() else {
             presentMissingItemAlert(name: bin.items[index].displayName)
             return
         }
@@ -480,7 +480,9 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
                 self.panel(view, didOpenItemAt: index)
             }
             menu.addItem(withActionTitle: "Reveal in Finder") { [weak self] in
-                guard let url = self?.store.bin(for: id)?.items[safe: index]?.resolveURL() else { return }
+                // Reveal the real item: an alias on the Desktop may itself be
+                // hidden by us, which would make revealing it useless.
+                guard let url = self?.store.bin(for: id)?.items[safe: index]?.resolvedTargetURL() else { return }
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
             menu.addItem(withActionTitle: "Remove from Bin") { [weak self] in

@@ -121,6 +121,15 @@ waits for the process to exit, replaces the bundle, and reopens it. The old
 bundle is moved aside rather than deleted, so a failed copy restores it
 instead of leaving no app installed at all.
 
+### Aliases
+
+Keeping aliases to folders on the Desktop is common, and asking macOS for an
+alias file's icon returns the generic alias document rather than the target's
+icon — so a folder alias looked like a blank page. Items therefore resolve
+through an alias before their icon is fetched, and opening or revealing an
+item lands on the real file rather than the alias (which may itself be hidden
+by this app).
+
 ### Multiple displays
 
 Each panel stores the stable UUID of its display
