@@ -1,0 +1,248 @@
+import AppKit
+
+/// Downloads and installs the latest release from GitHub, then restarts.
+///
+/// This installs code fetched from the network, so nothing is trusted on the
+/// strength of where it came from. Before anything is copied over the running
+/// app, the downloaded bundle must:
+///
+/// 1. pass `codesign --verify --deep --strict`,
+/// 2. carry the **same Team ID as the app that is running**, so a valid
+///    signature from somebody else is refused, and
+/// 3. pass Gatekeeper assessment, which means Apple notarized it.
+///
+/// A failure at any step aborts the update and leaves the installed app
+/// untouched.
+enum UpdateController {
+    private static let repository = "smanke/Desktop-Bins-Widget"
+
+    enum UpdateOutcome {
+        case upToDate(current: String)
+        case installed(version: String)
+        case failed(String)
+    }
+
+    // MARK: - Entry point
+
+    static func checkForUpdates() {
+        Task { @MainActor in
+            let current = AppInfo.version
+            do {
+                let release = try await fetchLatestRelease()
+                guard isNewer(release.version, than: current) else {
+                    present(.upToDate(current: current))
+                    return
+                }
+                guard confirmInstall(newVersion: release.version, current: current) else { return }
+
+                let stagedApp = try await downloadAndStage(release)
+                try verifySignature(of: stagedApp)
+                try installAndRelaunch(from: stagedApp)
+                // Control does not return: the app is replaced and restarted.
+            } catch {
+                present(.failed(error.localizedDescription))
+            }
+        }
+    }
+
+    // MARK: - Release lookup
+
+    private struct Release {
+        let version: String
+        let downloadURL: URL
+    }
+
+    private static func fetchLatestRelease() async throws -> Release {
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        // GitHub rejects API requests without one.
+        request.setValue("DesktopBinsWidget/\(AppInfo.version)", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw fail("Could not reach GitHub to check for updates.")
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tag = json["tag_name"] as? String,
+              let assets = json["assets"] as? [[String: Any]] else {
+            throw fail("The release information from GitHub could not be read.")
+        }
+
+        let dmg = assets.first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }
+        guard let urlString = dmg?["browser_download_url"] as? String,
+              let url = URL(string: urlString), url.scheme == "https" else {
+            throw fail("The latest release has no disk image to download.")
+        }
+
+        return Release(version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag, downloadURL: url)
+    }
+
+    /// Numeric component comparison, so 1.1.10 is correctly newer than 1.1.9.
+    static func isNewer(_ candidate: String, than current: String) -> Bool {
+        let a = candidate.split(separator: ".").map { Int($0) ?? 0 }
+        let b = current.split(separator: ".").map { Int($0) ?? 0 }
+        for index in 0..<max(a.count, b.count) {
+            let left = index < a.count ? a[index] : 0
+            let right = index < b.count ? b[index] : 0
+            if left != right { return left > right }
+        }
+        return false
+    }
+
+    // MARK: - Download
+
+    private static func downloadAndStage(_ release: Release) async throws -> URL {
+        let (downloadedURL, response) = try await URLSession.shared.download(from: release.downloadURL)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw fail("The download failed.")
+        }
+
+        let staging = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("DesktopBinsWidgetUpdate-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+
+        let dmg = staging.appendingPathComponent("update.dmg")
+        try FileManager.default.moveItem(at: downloadedURL, to: dmg)
+
+        // Mount read-only and without opening a Finder window.
+        let mountPoint = staging.appendingPathComponent("mount")
+        let attach = run("/usr/bin/hdiutil", ["attach", dmg.path, "-nobrowse", "-readonly", "-mountpoint", mountPoint.path])
+        guard attach.status == 0 else { throw fail("The downloaded disk image could not be opened.") }
+        defer { run("/usr/bin/hdiutil", ["detach", mountPoint.path, "-quiet"]) }
+
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: mountPoint.path)) ?? []
+        guard let appName = contents.first(where: { $0.hasSuffix(".app") }) else {
+            throw fail("The downloaded disk image does not contain an app.")
+        }
+
+        // Copy off the image before it is unmounted.
+        let stagedApp = staging.appendingPathComponent(appName)
+        try FileManager.default.copyItem(at: mountPoint.appendingPathComponent(appName), to: stagedApp)
+        return stagedApp
+    }
+
+    // MARK: - Verification
+
+    private static func verifySignature(of app: URL) throws {
+        let verify = run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
+        guard verify.status == 0 else {
+            throw fail("The downloaded app's signature is not valid, so it was not installed.")
+        }
+
+        guard let downloadedTeam = teamIdentifier(of: app.path) else {
+            throw fail("The downloaded app is not signed by a identifiable developer, so it was not installed.")
+        }
+        guard let runningTeam = teamIdentifier(of: Bundle.main.bundlePath) else {
+            throw fail("This copy of the app is unsigned, so an update cannot be verified against it.")
+        }
+        guard downloadedTeam == runningTeam else {
+            throw fail("The downloaded app is signed by a different developer (\(downloadedTeam)), so it was not installed.")
+        }
+
+        // Gatekeeper assessment: passes only if Apple notarized the build.
+        let assess = run("/usr/sbin/spctl", ["-a", "-t", "exec", app.path])
+        guard assess.status == 0 else {
+            throw fail("The downloaded app is not notarized by Apple, so it was not installed.")
+        }
+    }
+
+    private static func teamIdentifier(of path: String) -> String? {
+        let result = run("/usr/bin/codesign", ["-dvvv", path])
+        // codesign writes its description to stderr, which run() folds in.
+        for line in result.output.split(separator: "\n") where line.hasPrefix("TeamIdentifier=") {
+            let value = line.dropFirst("TeamIdentifier=".count).trimmingCharacters(in: .whitespaces)
+            return value == "not set" ? nil : value
+        }
+        return nil
+    }
+
+    // MARK: - Install
+
+    /// Hands the swap to a detached shell script, because the app cannot
+    /// replace and relaunch itself while it is the one running.
+    private static func installAndRelaunch(from stagedApp: URL) throws {
+        let destination = Bundle.main.bundlePath
+        let staging = stagedApp.deletingLastPathComponent()
+        let script = staging.appendingPathComponent("install.sh")
+
+        let body = """
+        #!/bin/sh
+        # Wait for the running app to quit before replacing its bundle.
+        while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done
+        /bin/rm -rf "\(destination)"
+        /bin/cp -R "\(stagedApp.path)" "\(destination)"
+        # Verified above, so clear the download flag to avoid a redundant prompt.
+        /usr/bin/xattr -dr com.apple.quarantine "\(destination)" 2>/dev/null
+        /usr/bin/open "\(destination)"
+        /bin/rm -rf "\(staging.path)"
+        """
+        try body.write(to: script, atomically: true, encoding: .utf8)
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = [script.path]
+        try task.run()
+
+        NSApp.terminate(nil)
+    }
+
+    // MARK: - Helpers
+
+    @discardableResult
+    private static func run(_ launchPath: String, _ arguments: [String]) -> (status: Int32, output: String) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: launchPath)
+        task.arguments = arguments
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        do {
+            try task.run()
+        } catch {
+            return (-1, "\(error)")
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        return (task.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+    }
+
+    private static func fail(_ message: String) -> NSError {
+        NSError(domain: "DesktopBinsWidget.Update", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    // MARK: - UI
+
+    private static func confirmInstall(newVersion: String, current: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Update to version \(newVersion)?"
+        alert.informativeText = """
+        You have \(current). The update will be downloaded, checked, and installed automatically.
+
+        Desktop Bins Widget will quit and reopen to finish. Your bins are not affected.
+        """
+        alert.addButton(withTitle: "Update and Restart")
+        alert.addButton(withTitle: "Not Now")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private static func present(_ outcome: UpdateOutcome) {
+        let alert = NSAlert()
+        switch outcome {
+        case .upToDate(let current):
+            alert.messageText = "You're up to date"
+            alert.informativeText = "Version \(current) is the latest release."
+        case .installed(let version):
+            alert.messageText = "Updated to \(version)"
+            alert.informativeText = "Desktop Bins Widget will reopen."
+        case .failed(let message):
+            alert.messageText = "Update failed"
+            alert.informativeText = message
+            alert.alertStyle = .warning
+        }
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+}

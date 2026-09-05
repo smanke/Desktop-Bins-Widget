@@ -15,10 +15,11 @@ struct SettingsView: View {
                 slider(label: "Panel opacity", value: $settings.panelOpacity, range: 0.3...1.0, step: 0.05, suffix: "")
                 Toggle("Show file names under icons", isOn: $settings.showLabels)
                 Toggle("Hide desktop icons for items in bins", isOn: $settings.hideDesktopIcons)
-                Toggle("Click Title Bar to Move", isOn: $settings.clickTitleBarToMove)
-                Text(settings.clickTitleBarToMove
-                     ? "Drag a bin by its title bar to move it."
-                     : "Dragging the title bar does nothing; hold ⌘ and drag to move a bin. Useful if bins get nudged by accident.")
+                Toggle("Click Title Bar to Move", isOn: $settings.requiresCommandToMove)
+                    .help("On: hold ⌘ and drag the title bar to move a bin. Off: drag the title bar directly.")
+                Text(settings.requiresCommandToMove
+                     ? "Hold ⌘ and drag the title bar to move a bin. Stops bins being nudged by accident."
+                     : "Drag the title bar directly to move a bin.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

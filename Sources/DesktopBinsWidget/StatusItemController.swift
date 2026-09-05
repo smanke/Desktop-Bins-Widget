@@ -53,7 +53,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         hideItem.state = settings.hideDesktopIcons ? .on : .off
 
         let moveItem = menu.addItem(withTitle: "Click Title Bar to Move", action: #selector(toggleClickToMove), keyEquivalent: "", target: self)
-        moveItem.state = settings.clickTitleBarToMove ? .on : .off
+        moveItem.state = settings.requiresCommandToMove ? .on : .off
+        moveItem.toolTip = settings.requiresCommandToMove
+            ? "On: hold ⌘ and drag a bin's title bar to move it. Turn off to drag it directly."
+            : "Off: drag a bin's title bar directly to move it. Turn on to require ⌘ and drag."
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "Remove Missing Items", action: #selector(removeMissing), keyEquivalent: "", target: self)
@@ -66,6 +69,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let loginItem = menu.addItem(withTitle: "Open at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "", target: self)
         loginItem.state = settings.launchAtLogin ? .on : .off
 
+        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "", target: self)
+            .toolTip = "Download and install the latest release from GitHub, then restart."
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",", target: self)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Desktop Bins Widget", action: #selector(quit), keyEquivalent: "q", target: self)
@@ -80,7 +85,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func newBin() { panelController.addBinAtCenterOfMainScreen() }
     @objc private func toggleLabels() { SettingsStore.shared.showLabels.toggle() }
     @objc private func toggleHideDesktopIcons() { SettingsStore.shared.hideDesktopIcons.toggle() }
-    @objc private func toggleClickToMove() { SettingsStore.shared.clickTitleBarToMove.toggle() }
+    @objc private func toggleClickToMove() { SettingsStore.shared.requiresCommandToMove.toggle() }
 
     @objc private func unhideAll() {
         let restored = panelController.restoreAllDesktopIcons()
@@ -95,6 +100,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
     @objc private func toggleVisibility() { panelController.setAllVisible(!panelController.isVisible) }
     @objc private func toggleLaunchAtLogin() { SettingsStore.shared.launchAtLogin.toggle() }
+    @objc private func checkForUpdates() { UpdateController.checkForUpdates() }
     @objc private func showSettings() { settingsWindowController.show() }
     @objc private func quit() { NSApp.terminate(nil) }
 

@@ -254,7 +254,7 @@ final class BinPanelView: NSView {
             // When plain dragging is turned off, Command is what moves the
             // panel, so the menu has to wait until we know this was a click
             // and not the start of a drag.
-            if !SettingsStore.shared.clickTitleBarToMove {
+            if SettingsStore.shared.requiresCommandToMove {
                 pendingCommandPoint = point
                 return
             }
@@ -285,9 +285,9 @@ final class BinPanelView: NSView {
             return
         }
 
-        // With "Click Title Bar to Move" off, a bare drag must not move the
-        // panel — Command-drag does instead.
-        guard SettingsStore.shared.clickTitleBarToMove else { return }
+        // With the setting checked, a bare drag must not move the panel —
+        // Command-drag does instead.
+        guard !SettingsStore.shared.requiresCommandToMove else { return }
         dragMode = .move
         delegate?.panelDidBeginGesture(self, kind: .move)
     }

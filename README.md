@@ -34,6 +34,7 @@ layer — widget-like in feel, fully interactive in practice.
 - Each set of monitors remembers its own arrangement
 - Item count in the title bar can be turned off per bin
 - Optional Command-drag to move, so bins can't be nudged by accident
+- Updates itself from the menu bar, verifying the download before installing
 - Optional launch at login
 
 ## Installing
@@ -92,6 +93,23 @@ menu is the catch-all.
 Only files sitting directly on the Desktop are touched. Hiding something
 dragged in from Documents would make it vanish from a folder the user is
 actively browsing, which is not what "hide the desktop icon" means.
+
+### Updating
+
+"Check for Updates…" reads the latest GitHub release, downloads its disk
+image, and replaces the running app.
+
+Since that installs code fetched from the network, nothing is trusted on the
+strength of where it came from. Before anything is copied over the installed
+app, the downloaded bundle must pass `codesign --verify --deep --strict`,
+carry the **same Team ID as the app that is running** (so a valid signature
+belonging to someone else is refused), and pass Gatekeeper assessment, which
+only succeeds if Apple notarized it. Any failure aborts and leaves the
+installed app untouched.
+
+The swap itself is handed to a detached shell script, because an app cannot
+replace and relaunch its own bundle while it is the one running: the script
+waits for the process to exit, replaces the bundle, and reopens it.
 
 ### Multiple displays
 

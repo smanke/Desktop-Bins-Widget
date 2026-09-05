@@ -13,7 +13,7 @@ final class SettingsStore: ObservableObject {
         static let showLabels = "showLabels"
         static let panelOpacity = "panelOpacity"
         static let hideDesktopIcons = "hideDesktopIcons"
-        static let clickTitleBarToMove = "clickTitleBarToMove"
+        static let requiresCommandToMove = "requiresCommandToMove"
     }
 
     static let defaultIconSize: Double = 48
@@ -43,9 +43,11 @@ final class SettingsStore: ObservableObject {
 
     var onHideDesktopIconsChanged: ((Bool) -> Void)?
 
-    /// When on, dragging the title bar moves the panel. Turn it off to
-    /// require Command-drag instead, so a panel can't be nudged by accident.
-    @Published var clickTitleBarToMove: Bool { didSet { save() } }
+    /// Shown to the user as "Click Title Bar to Move". Checked means a plain
+    /// drag will *not* move a panel — Command-drag is required — which is
+    /// what stops bins being nudged by accident. The stored name says what
+    /// the flag actually does, since the label reads the other way round.
+    @Published var requiresCommandToMove: Bool { didSet { save() } }
 
     private init() {
         let defaults = UserDefaults.standard
@@ -54,14 +56,14 @@ final class SettingsStore: ObservableObject {
             Key.showLabels: true,
             Key.panelOpacity: Self.defaultOpacity,
             Key.hideDesktopIcons: true,
-            Key.clickTitleBarToMove: true
+            Key.requiresCommandToMove: true
         ])
         launchAtLogin = LaunchAtLoginController.isEnabled
         iconSize = defaults.double(forKey: Key.iconSize)
         showLabels = defaults.bool(forKey: Key.showLabels)
         panelOpacity = defaults.double(forKey: Key.panelOpacity)
         hideDesktopIcons = defaults.bool(forKey: Key.hideDesktopIcons)
-        clickTitleBarToMove = defaults.bool(forKey: Key.clickTitleBarToMove)
+        requiresCommandToMove = defaults.bool(forKey: Key.requiresCommandToMove)
     }
 
     private func save() {
@@ -70,7 +72,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(showLabels, forKey: Key.showLabels)
         defaults.set(panelOpacity, forKey: Key.panelOpacity)
         defaults.set(hideDesktopIcons, forKey: Key.hideDesktopIcons)
-        defaults.set(clickTitleBarToMove, forKey: Key.clickTitleBarToMove)
+        defaults.set(requiresCommandToMove, forKey: Key.requiresCommandToMove)
     }
 
     /// Smallest a panel can be: one column of icons plus its insets, so a
@@ -89,6 +91,6 @@ final class SettingsStore: ObservableObject {
         showLabels = true
         panelOpacity = Self.defaultOpacity
         hideDesktopIcons = true
-        clickTitleBarToMove = true
+        requiresCommandToMove = true
     }
 }
