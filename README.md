@@ -32,6 +32,8 @@ layer — widget-like in feel, fully interactive in practice.
   is no longer attached
 - Desktop icons of items in a bin are hidden, so the same file isn't shown twice
 - Each set of monitors remembers its own arrangement
+- Item count in the title bar can be turned off per bin
+- Optional Command-drag to move, so bins can't be nudged by accident
 - Optional launch at login
 
 ## Installing

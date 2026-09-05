@@ -25,6 +25,10 @@ struct Bin: Identifiable, Codable, Equatable {
     var isCollapsed: Bool
     var items: [BinItem]
 
+    /// Whether the title bar shows "(n)" after the name. Per bin, since it
+    /// is useful on a bin you are filling and noise on a settled one.
+    var showsItemCount: Bool
+
     /// Stable identifier of the display this bin lives on, plus its position
     /// relative to that display's origin, so bins stay on the right monitor
     /// when displays are attached, detached or rearranged.
@@ -47,6 +51,7 @@ struct Bin: Identifiable, Codable, Equatable {
         colorHex: String = "3B82F6",
         isCollapsed: Bool = false,
         items: [BinItem] = [],
+        showsItemCount: Bool = true,
         displayUUID: String? = nil,
         relativeX: Double? = nil,
         relativeY: Double? = nil,
@@ -61,6 +66,7 @@ struct Bin: Identifiable, Codable, Equatable {
         self.colorHex = colorHex
         self.isCollapsed = isCollapsed
         self.items = items
+        self.showsItemCount = showsItemCount
         self.displayUUID = displayUUID
         self.relativeX = relativeX
         self.relativeY = relativeY
@@ -78,6 +84,7 @@ struct Bin: Identifiable, Codable, Equatable {
         colorHex = try c.decode(String.self, forKey: .colorHex)
         isCollapsed = try c.decode(Bool.self, forKey: .isCollapsed)
         items = try c.decodeIfPresent([BinItem].self, forKey: .items) ?? []
+        showsItemCount = try c.decodeIfPresent(Bool.self, forKey: .showsItemCount) ?? true
         displayUUID = try c.decodeIfPresent(String.self, forKey: .displayUUID)
         relativeX = try c.decodeIfPresent(Double.self, forKey: .relativeX)
         relativeY = try c.decodeIfPresent(Double.self, forKey: .relativeY)

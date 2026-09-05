@@ -15,6 +15,13 @@ struct SettingsView: View {
                 slider(label: "Panel opacity", value: $settings.panelOpacity, range: 0.3...1.0, step: 0.05, suffix: "")
                 Toggle("Show file names under icons", isOn: $settings.showLabels)
                 Toggle("Hide desktop icons for items in bins", isOn: $settings.hideDesktopIcons)
+                Toggle("Click Title Bar to Move", isOn: $settings.clickTitleBarToMove)
+                Text(settings.clickTitleBarToMove
+                     ? "Drag a bin by its title bar to move it."
+                     : "Dragging the title bar does nothing; hold ⌘ and drag to move a bin. Useful if bins get nudged by accident.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Files you drag in from the Desktop are marked hidden so the same item isn't shown twice. Nothing is moved or renamed, and removing an item from a bin puts its icon straight back.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -36,7 +43,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 430, height: 340)
+        .frame(width: 430, height: 440)
     }
 
     private func slider(label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double, suffix: String) -> some View {

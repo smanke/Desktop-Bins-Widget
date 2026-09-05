@@ -9,8 +9,8 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
     private var screenSettleWorkItem: DispatchWorkItem?
     private(set) var isVisible = true
 
-    private static let minWidth: CGFloat = 180
-    private static let minHeight: CGFloat = 140
+    private var minWidth: CGFloat { CGFloat(SettingsStore.shared.minPanelWidth) }
+    private var minHeight: CGFloat { CGFloat(SettingsStore.shared.minPanelHeight) }
 
     init(store: BinStore) {
         self.store = store
@@ -235,7 +235,7 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
     private func recordLayoutForCurrentConfigurationIfNew() {
         let signature = DisplayIdentity.configurationSignature()
         guard signature != "none" else { return }
-        for var bin in store.bins where bin.layouts[signature] == nil {
+        for bin in store.bins where bin.layouts[signature] == nil {
             var updated = bin
             pinToDisplay(&updated, frame: frameOf(bin))
             store.updateBin(updated)
@@ -385,8 +385,8 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         case .move:
             window.setFrameOrigin(NSPoint(x: frame.origin.x + delta.width, y: frame.origin.y + delta.height))
         case .resize:
-            let width = max(Self.minWidth, frame.width + delta.width)
-            let height = max(Self.minHeight, frame.height - delta.height)
+            let width = max(minWidth, frame.width + delta.width)
+            let height = max(minHeight, frame.height - delta.height)
             window.setFrame(
                 NSRect(x: frame.origin.x, y: frame.maxY - height, width: width, height: height),
                 display: true
@@ -497,6 +497,12 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
             guard let self, let view = self.view(for: id) else { return }
             self.panelRequestsToggleCollapse(view)
         }
+        let countItem = menu.addItem(withActionTitle: "Show Item Count") { [weak self] in
+            guard let self, var bin = self.store.bin(for: id) else { return }
+            bin.showsItemCount.toggle()
+            self.commit(bin)
+        }
+        countItem.state = bin.showsItemCount ? .on : .off
         menu.addItem(withActionTitle: "Rename Bin…") { [weak self] in self?.renameBin(id) }
         menu.addItem(withActionTitle: "Change Color…") { [weak self] in self?.changeColor(id) }
         menu.addItem(.separator())

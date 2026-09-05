@@ -52,6 +52,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let hideItem = menu.addItem(withTitle: "Hide Desktop Icons for Items in Bins", action: #selector(toggleHideDesktopIcons), keyEquivalent: "", target: self)
         hideItem.state = settings.hideDesktopIcons ? .on : .off
 
+        let moveItem = menu.addItem(withTitle: "Click Title Bar to Move", action: #selector(toggleClickToMove), keyEquivalent: "", target: self)
+        moveItem.state = settings.clickTitleBarToMove ? .on : .off
+
         menu.addItem(.separator())
         menu.addItem(withTitle: "Remove Missing Items", action: #selector(removeMissing), keyEquivalent: "", target: self)
         menu.addItem(withTitle: "Show All Hidden Desktop Icons", action: #selector(unhideAll), keyEquivalent: "", target: self)
@@ -77,6 +80,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func newBin() { panelController.addBinAtCenterOfMainScreen() }
     @objc private func toggleLabels() { SettingsStore.shared.showLabels.toggle() }
     @objc private func toggleHideDesktopIcons() { SettingsStore.shared.hideDesktopIcons.toggle() }
+    @objc private func toggleClickToMove() { SettingsStore.shared.clickTitleBarToMove.toggle() }
 
     @objc private func unhideAll() {
         let restored = panelController.restoreAllDesktopIcons()

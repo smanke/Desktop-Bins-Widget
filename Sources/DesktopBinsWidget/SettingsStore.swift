@@ -13,6 +13,7 @@ final class SettingsStore: ObservableObject {
         static let showLabels = "showLabels"
         static let panelOpacity = "panelOpacity"
         static let hideDesktopIcons = "hideDesktopIcons"
+        static let clickTitleBarToMove = "clickTitleBarToMove"
     }
 
     static let defaultIconSize: Double = 48
@@ -42,19 +43,25 @@ final class SettingsStore: ObservableObject {
 
     var onHideDesktopIconsChanged: ((Bool) -> Void)?
 
+    /// When on, dragging the title bar moves the panel. Turn it off to
+    /// require Command-drag instead, so a panel can't be nudged by accident.
+    @Published var clickTitleBarToMove: Bool { didSet { save() } }
+
     private init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
             Key.iconSize: Self.defaultIconSize,
             Key.showLabels: true,
             Key.panelOpacity: Self.defaultOpacity,
-            Key.hideDesktopIcons: true
+            Key.hideDesktopIcons: true,
+            Key.clickTitleBarToMove: true
         ])
         launchAtLogin = LaunchAtLoginController.isEnabled
         iconSize = defaults.double(forKey: Key.iconSize)
         showLabels = defaults.bool(forKey: Key.showLabels)
         panelOpacity = defaults.double(forKey: Key.panelOpacity)
         hideDesktopIcons = defaults.bool(forKey: Key.hideDesktopIcons)
+        clickTitleBarToMove = defaults.bool(forKey: Key.clickTitleBarToMove)
     }
 
     private func save() {
@@ -63,6 +70,14 @@ final class SettingsStore: ObservableObject {
         defaults.set(showLabels, forKey: Key.showLabels)
         defaults.set(panelOpacity, forKey: Key.panelOpacity)
         defaults.set(hideDesktopIcons, forKey: Key.hideDesktopIcons)
+        defaults.set(clickTitleBarToMove, forKey: Key.clickTitleBarToMove)
+    }
+
+    /// Smallest a panel can be: one column of icons plus its insets, so a
+    /// narrow single-column panel is possible at any icon size.
+    var minPanelWidth: Double { cellWidth + 2 * Double(WidgetMetrics.contentInset) }
+    var minPanelHeight: Double {
+        Double(WidgetMetrics.titleBarHeight) + cellHeight + 2 * Double(WidgetMetrics.contentInset)
     }
 
     /// Cell size derived from the icon size, leaving room for the label.
@@ -74,5 +89,6 @@ final class SettingsStore: ObservableObject {
         showLabels = true
         panelOpacity = Self.defaultOpacity
         hideDesktopIcons = true
+        clickTitleBarToMove = true
     }
 }

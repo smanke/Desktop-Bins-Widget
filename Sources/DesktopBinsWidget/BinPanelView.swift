@@ -33,6 +33,7 @@ final class BinPanelView: NSView {
     private var draggingItemIndex: Int?
     private var dragCurrentPoint: NSPoint?
     private var hoveredDropIndex: Int?
+    private var pendingCommandPoint: NSPoint?
     private var isDropTarget = false
 
     init(bin: Bin) {
@@ -157,7 +158,7 @@ final class BinPanelView: NSView {
         ]
         let inner = titleRect.insetBy(dx: 10, dy: 0)
         let textHeight = font.boundingRectForFont.height
-        let count = bin.items.isEmpty ? "" : "  (\(bin.items.count))"
+        let count = (bin.showsItemCount && !bin.items.isEmpty) ? "  (\(bin.items.count))" : ""
         (bin.title + count).draw(
             in: NSRect(x: inner.minX, y: inner.midY - textHeight / 2, width: inner.width, height: textHeight),
             withAttributes: attrs
@@ -250,6 +251,13 @@ final class BinPanelView: NSView {
         let point = convert(event.locationInWindow, from: nil)
 
         if event.modifierFlags.contains(.command) {
+            // When plain dragging is turned off, Command is what moves the
+            // panel, so the menu has to wait until we know this was a click
+            // and not the start of a drag.
+            if !SettingsStore.shared.clickTitleBarToMove {
+                pendingCommandPoint = point
+                return
+            }
             showMenu(at: point, itemIndex: itemIndex(at: point))
             return
         }
@@ -277,12 +285,23 @@ final class BinPanelView: NSView {
             return
         }
 
+        // With "Click Title Bar to Move" off, a bare drag must not move the
+        // panel — Command-drag does instead.
+        guard SettingsStore.shared.clickTitleBarToMove else { return }
         dragMode = .move
         delegate?.panelDidBeginGesture(self, kind: .move)
     }
 
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+
+        // A Command-press that turns into a drag is a move, not a menu.
+        if let start = pendingCommandPoint {
+            guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
+            pendingCommandPoint = nil
+            dragMode = .move
+            delegate?.panelDidBeginGesture(self, kind: .move)
+        }
 
         if draggingItemIndex != nil {
             dragCurrentPoint = point
@@ -296,6 +315,13 @@ final class BinPanelView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // A Command-press that never became a drag opens the menu.
+        if let start = pendingCommandPoint {
+            pendingCommandPoint = nil
+            showMenu(at: start, itemIndex: itemIndex(at: start))
+            return
+        }
+
         if let from = draggingItemIndex {
             let point = convert(event.locationInWindow, from: nil)
             var to = insertionIndex(at: point)
