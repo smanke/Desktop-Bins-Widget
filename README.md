@@ -26,7 +26,10 @@ layer — widget-like in feel, fully interactive in practice.
 - Drag by the title bar, resize from the corner, double-click the title to collapse
 - Rename, recolor and delete panels
 - Icon size, panel opacity and labels are configurable
-- Panels remember which physical monitor they belong to
+- Panels remember which physical monitor they belong to, and appear on the
+  main display rather than vanishing when that monitor is absent
+- "Bring All Bins to Main Display" rescues panels stranded on a monitor that
+  is no longer attached
 - Optional launch at login
 
 ## Installing
@@ -80,5 +83,11 @@ Each panel stores the stable UUID of its display
 never a raw `CGDirectDisplayID` — those are assigned per session, so the
 same monitor can return with a different id. Storing an offset rather than
 an absolute point keeps panels in place when displays are rearranged and the
-global coordinate space shifts. Panels on a detached display are retained
-but hidden, returning when that monitor is reconnected.
+global coordinate space shifts. A panel whose display is not attached is shown on the main display instead of
+being hidden — plugging a laptop into a different set of monitors should not
+look like the panels were lost. Its stored pin is left untouched so it
+returns home when its own monitor comes back; it is only re-pinned if the
+user actually moves it. Offsets from a larger monitor are clamped into the
+fallback screen so a panel can't land off-screen. "Bring All Bins to Main
+Display" in the menu tiles everything onto the main display as an emergency
+recovery.

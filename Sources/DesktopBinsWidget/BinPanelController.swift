@@ -54,12 +54,7 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
                 windows[bin.id] = window
             }
 
-            // A bin whose display is detached stays stored but off screen,
-            // ready for that monitor to come back.
-            guard let frame = frameOf(bin) else {
-                window.orderOut(nil)
-                continue
-            }
+            let frame = frameOf(bin)
             window.setFrame(frame, display: true)
             window.contentView?.frame = NSRect(origin: .zero, size: frame.size)
             window.contentView?.needsDisplay = true
@@ -68,7 +63,7 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
     }
 
     private func makeWindow(for bin: Bin) -> BinPanelWindow {
-        let frame = frameOf(bin) ?? NSRect(x: bin.x, y: bin.y, width: bin.width, height: bin.height)
+        let frame = frameOf(bin)
         let window = BinPanelWindow(contentRect: frame)
         let view = BinPanelView(bin: bin)
         view.delegate = self
@@ -95,9 +90,13 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
 
     // MARK: - Display placement
 
-    private func frameOf(_ bin: Bin) -> NSRect? {
-        if let uuid = bin.displayUUID {
-            guard let screen = DisplayIdentity.screen(withUUID: uuid) else { return nil }
+    /// A panel whose display is absent is shown on the main display rather
+    /// than vanishing — plugging into a different set of monitors should not
+    /// look like the panels were lost. Its stored pin is left alone so it
+    /// returns home when its own display comes back; it is only re-pinned if
+    /// the user actually moves it.
+    private func frameOf(_ bin: Bin) -> NSRect {
+        if let uuid = bin.displayUUID, let screen = DisplayIdentity.screen(withUUID: uuid) {
             return NSRect(
                 x: screen.frame.origin.x + CGFloat(bin.relativeX ?? 0),
                 y: screen.frame.origin.y + CGFloat(bin.relativeY ?? 0),
@@ -105,7 +104,71 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
                 height: bin.height
             )
         }
-        return NSRect(x: bin.x, y: bin.y, width: bin.width, height: bin.height)
+
+        let stored = NSRect(x: bin.x, y: bin.y, width: bin.width, height: bin.height)
+        guard bin.displayUUID != nil, let fallback = mainScreen() else { return stored }
+
+        // Offsets from a bigger monitor can land far outside a laptop screen,
+        // so fit the panel to whatever display is actually available.
+        let relative = NSRect(
+            x: fallback.frame.origin.x + CGFloat(bin.relativeX ?? 0),
+            y: fallback.frame.origin.y + CGFloat(bin.relativeY ?? 0),
+            width: bin.width,
+            height: bin.height
+        )
+        return clamp(relative, into: fallback.visibleFrame)
+    }
+
+    private func mainScreen() -> NSScreen? {
+        NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private func clamp(_ frame: NSRect, into bounds: NSRect) -> NSRect {
+        let width = min(frame.width, bounds.width)
+        let height = min(frame.height, bounds.height)
+        let x = min(max(frame.origin.x, bounds.minX), bounds.maxX - width)
+        let y = min(max(frame.origin.y, bounds.minY), bounds.maxY - height)
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+
+    /// Emergency escape hatch: gathers every panel onto the main display and
+    /// re-pins it there, for when panels are stranded on a monitor that no
+    /// longer exists.
+    @discardableResult
+    func consolidateBinsToMainDisplay() -> Int {
+        guard let screen = mainScreen() else { return 0 }
+        let bounds = screen.visibleFrame
+        let padding: CGFloat = 20
+        var cursor = NSPoint(x: bounds.minX + padding, y: bounds.maxY - padding)
+        var rowHeight: CGFloat = 0
+        var moved = 0
+
+        for var bin in store.bins {
+            let width = min(CGFloat(bin.width), bounds.width - 2 * padding)
+            let height = min(CGFloat(bin.height), bounds.height - 2 * padding)
+
+            // Tile left to right, wrapping to a new row when out of width.
+            if cursor.x + width > bounds.maxX - padding {
+                cursor.x = bounds.minX + padding
+                cursor.y -= rowHeight + padding
+                rowHeight = 0
+            }
+            if cursor.y - height < bounds.minY + padding {
+                cursor = NSPoint(x: bounds.minX + padding, y: bounds.maxY - padding)
+                rowHeight = 0
+            }
+
+            let frame = NSRect(x: cursor.x, y: cursor.y - height, width: width, height: height)
+            pinToDisplay(&bin, frame: frame)
+            store.updateBin(bin)
+
+            cursor.x += width + padding
+            rowHeight = max(rowHeight, height)
+            moved += 1
+        }
+
+        syncWindows()
+        return moved
     }
 
     private func pinToDisplay(_ bin: inout Bin, frame: NSRect) {

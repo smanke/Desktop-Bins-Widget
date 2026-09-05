@@ -51,6 +51,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "Remove Missing Items", action: #selector(removeMissing), keyEquivalent: "", target: self)
+        menu.addItem(withTitle: "Bring All Bins to Main Display", action: #selector(consolidate), keyEquivalent: "", target: self)
 
         let visibilityTitle = panelController.isVisible ? "Hide All Bins" : "Show All Bins"
         menu.addItem(withTitle: visibilityTitle, action: #selector(toggleVisibility), keyEquivalent: "", target: self)
@@ -61,6 +62,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",", target: self)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Desktop Bins Widget", action: #selector(quit), keyEquivalent: "q", target: self)
+
+        // Version last, as a non-actionable footer.
+        menu.addItem(.separator())
+        let versionItem = NSMenuItem(title: "Desktop Bins Widget \(AppInfo.displayVersion)", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
     }
 
     @objc private func newBin() { panelController.addBinAtCenterOfMainScreen() }
@@ -73,6 +80,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func setIconSize(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? Double else { return }
         SettingsStore.shared.iconSize = value
+    }
+
+    @objc private func consolidate() {
+        let alert = NSAlert()
+        alert.messageText = "Bring all bins to the main display?"
+        alert.informativeText = "Every panel will be moved onto this display and re-pinned here. Use this if panels are stranded on a monitor that is no longer attached."
+        alert.addButton(withTitle: "Bring Them Here")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let moved = panelController.consolidateBinsToMainDisplay()
+        let done = NSAlert()
+        done.messageText = "Moved \(moved) bin(s)"
+        done.informativeText = "They are now on the main display and pinned to it."
+        done.addButton(withTitle: "OK")
+        done.runModal()
     }
 
     @objc private func removeMissing() {
