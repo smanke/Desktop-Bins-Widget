@@ -5,6 +5,15 @@ import Foundation
 /// Unlike Desktop Bins, a bin here owns its contents outright rather than
 /// arranging Finder's desktop icons, so its item order is explicit rather
 /// than inferred from icon positions on screen.
+/// Where a bin sat under one particular set of attached monitors.
+struct BinPlacement: Codable, Equatable {
+    var displayUUID: String
+    var relativeX: Double
+    var relativeY: Double
+    var width: Double
+    var height: Double
+}
+
 struct Bin: Identifiable, Codable, Equatable {
     var id: UUID
     var title: String
@@ -23,6 +32,11 @@ struct Bin: Identifiable, Codable, Equatable {
     var relativeX: Double?
     var relativeY: Double?
 
+    /// Arrangement remembered per monitor setup, keyed by the signature of
+    /// the attached displays. Returning to a setup restores whatever layout
+    /// was last used with it, rather than only remembering one position.
+    var layouts: [String: BinPlacement]
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -35,7 +49,8 @@ struct Bin: Identifiable, Codable, Equatable {
         items: [BinItem] = [],
         displayUUID: String? = nil,
         relativeX: Double? = nil,
-        relativeY: Double? = nil
+        relativeY: Double? = nil,
+        layouts: [String: BinPlacement] = [:]
     ) {
         self.id = id
         self.title = title
@@ -49,6 +64,7 @@ struct Bin: Identifiable, Codable, Equatable {
         self.displayUUID = displayUUID
         self.relativeX = relativeX
         self.relativeY = relativeY
+        self.layouts = layouts
     }
 
     init(from decoder: Decoder) throws {
@@ -65,5 +81,6 @@ struct Bin: Identifiable, Codable, Equatable {
         displayUUID = try c.decodeIfPresent(String.self, forKey: .displayUUID)
         relativeX = try c.decodeIfPresent(Double.self, forKey: .relativeX)
         relativeY = try c.decodeIfPresent(Double.self, forKey: .relativeY)
+        layouts = try c.decodeIfPresent([String: BinPlacement].self, forKey: .layouts) ?? [:]
     }
 }

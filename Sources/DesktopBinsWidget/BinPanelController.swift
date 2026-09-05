@@ -6,6 +6,7 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
     private var windows: [UUID: BinPanelWindow] = [:]
     private var expandedHeights: [UUID: Double] = [:]
     private var gestureStartFrame: NSRect?
+    private var screenSettleWorkItem: DispatchWorkItem?
     private(set) var isVisible = true
 
     private static let minWidth: CGFloat = 180
@@ -16,6 +17,9 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         super.init()
         store.onChange = { [weak self] in self?.syncWindows() }
         SettingsStore.shared.onChange = { [weak self] in self?.redrawAll() }
+        SettingsStore.shared.onHideDesktopIconsChanged = { [weak self] hide in
+            self?.applyDesktopIconHiding(hide)
+        }
         syncWindows()
 
         NotificationCenter.default.addObserver(
@@ -25,14 +29,29 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
             object: nil
         )
         adoptCurrentDisplayForUnpinnedBins()
+        recordLayoutForCurrentConfigurationIfNew()
+        // Bring existing items in line with the setting: dropping an item is
+        // not the only way one can end up in a bin, and the setting may have
+        // been changed while the app was not running.
+        applyDesktopIconHiding(SettingsStore.shared.hideDesktopIcons)
     }
 
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
 
+    /// Display changes arrive as a burst of notifications, so the response is
+    /// coalesced before the new arrangement is recorded.
     @objc private func screenConfigurationChanged() {
         syncWindows()
+        screenSettleWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.syncWindows()
+            self.recordLayoutForCurrentConfigurationIfNew()
+        }
+        screenSettleWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 
     // MARK: - Windows
@@ -96,6 +115,19 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
     /// returns home when its own display comes back; it is only re-pinned if
     /// the user actually moves it.
     private func frameOf(_ bin: Bin) -> NSRect {
+        // A layout remembered for this exact set of monitors wins, so
+        // returning to a previous setup restores that arrangement.
+        let signature = DisplayIdentity.configurationSignature()
+        if let placement = bin.layouts[signature],
+           let screen = DisplayIdentity.screen(withUUID: placement.displayUUID) {
+            return NSRect(
+                x: screen.frame.origin.x + CGFloat(placement.relativeX),
+                y: screen.frame.origin.y + CGFloat(placement.relativeY),
+                width: placement.width,
+                height: placement.height
+            )
+        }
+
         if let uuid = bin.displayUUID, let screen = DisplayIdentity.screen(withUUID: uuid) {
             return NSRect(
                 x: screen.frame.origin.x + CGFloat(bin.relativeX ?? 0),
@@ -187,6 +219,27 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         bin.displayUUID = uuid
         bin.relativeX = Double(frame.origin.x - screen.frame.origin.x)
         bin.relativeY = Double(frame.origin.y - screen.frame.origin.y)
+
+        // Remember this arrangement against the current set of monitors.
+        bin.layouts[DisplayIdentity.configurationSignature()] = BinPlacement(
+            displayUUID: uuid,
+            relativeX: Double(frame.origin.x - screen.frame.origin.x),
+            relativeY: Double(frame.origin.y - screen.frame.origin.y),
+            width: Double(frame.width),
+            height: Double(frame.height)
+        )
+    }
+
+    /// Records where each bin ended up under a set of monitors we have not
+    /// seen before, so this arrangement becomes the one restored next time.
+    private func recordLayoutForCurrentConfigurationIfNew() {
+        let signature = DisplayIdentity.configurationSignature()
+        guard signature != "none" else { return }
+        for var bin in store.bins where bin.layouts[signature] == nil {
+            var updated = bin
+            pinToDisplay(&updated, frame: frameOf(bin))
+            store.updateBin(updated)
+        }
     }
 
     private func adoptCurrentDisplayForUnpinnedBins() {
@@ -238,6 +291,84 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
             if bin.items.count != before { commit(bin) }
         }
         return removed
+    }
+
+
+    // MARK: - Hiding desktop icons
+
+    /// Once an item lives in a bin, its desktop icon is redundant, so the
+    /// file is marked hidden and Finder stops drawing it on the desktop.
+    ///
+    /// Only files sitting directly on the Desktop are touched: hiding an item
+    /// dragged in from Documents would make it vanish from a folder the user
+    /// is actively browsing, which is not what they asked for. Nothing is
+    /// moved or renamed, so the change is undone by simply clearing the flag.
+    private func isOnDesktop(_ url: URL) -> Bool {
+        guard let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else { return false }
+        return url.deletingLastPathComponent().resolvingSymlinksInPath().path
+            == desktop.resolvingSymlinksInPath().path
+    }
+
+    @discardableResult
+    private func setHidden(_ url: URL, _ hidden: Bool) -> Bool {
+        var target = url
+        var values = URLResourceValues()
+        values.isHidden = hidden
+        do {
+            try target.setResourceValues(values)
+            return true
+        } catch {
+            NSLog("DesktopBinsWidget: could not \(hidden ? "hide" : "unhide") \(url.lastPathComponent): \(error)")
+            return false
+        }
+    }
+
+    /// Hides an item's desktop icon if the setting allows it, recording that
+    /// we were the ones who hid it.
+    private func hideDesktopIconIfNeeded(_ item: inout BinItem) {
+        guard SettingsStore.shared.hideDesktopIcons, !item.didHideOriginal,
+              let url = item.resolveURL(), isOnDesktop(url) else { return }
+        if setHidden(url, true) { item.didHideOriginal = true }
+    }
+
+    /// Puts back anything this app hid — used when an item leaves a bin, a
+    /// bin is deleted, or the setting is turned off.
+    private func restoreDesktopIcon(_ item: inout BinItem) {
+        guard item.didHideOriginal, let url = item.resolveURL() else {
+            item.didHideOriginal = false
+            return
+        }
+        setHidden(url, false)
+        item.didHideOriginal = false
+    }
+
+    /// Applies the setting across every existing item, in both directions.
+    @discardableResult
+    func applyDesktopIconHiding(_ hide: Bool) -> Int {
+        var changed = 0
+        for var bin in store.bins {
+            var items = bin.items
+            for index in items.indices {
+                let before = items[index].didHideOriginal
+                if hide {
+                    hideDesktopIconIfNeeded(&items[index])
+                } else {
+                    restoreDesktopIcon(&items[index])
+                }
+                if items[index].didHideOriginal != before { changed += 1 }
+            }
+            if items != bin.items {
+                bin.items = items
+                commit(bin)
+            }
+        }
+        return changed
+    }
+
+    /// Safety valve: unhide everything, whatever the setting says.
+    @discardableResult
+    func restoreAllDesktopIcons() -> Int {
+        applyDesktopIconHiding(false)
     }
 
     // MARK: - BinPanelViewDelegate
@@ -296,10 +427,13 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         guard var bin = store.bin(for: view.bin.id) else { return }
         // Ignore anything already held, so dropping twice doesn't duplicate.
         let existing = Set(bin.items.map(\.path))
-        let newItems = urls
+        var newItems = urls
             .filter { !existing.contains($0.path) }
             .map { BinItem(url: $0) }
         guard !newItems.isEmpty else { return }
+        for index in newItems.indices {
+            hideDesktopIconIfNeeded(&newItems[index])
+        }
 
         let insertAt = min(max(index, 0), bin.items.count)
         bin.items.insert(contentsOf: newItems, at: insertAt)
@@ -351,7 +485,9 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
             }
             menu.addItem(withActionTitle: "Remove from Bin") { [weak self] in
                 guard let self, var bin = self.store.bin(for: id), bin.items.indices.contains(index) else { return }
-                bin.items.remove(at: index)
+                var removed = bin.items.remove(at: index)
+                // Put the desktop icon back now that it has left the bin.
+                self.restoreDesktopIcon(&removed)
                 self.commit(bin)
             }
             menu.addItem(.separator())
@@ -417,6 +553,12 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         alert.alertStyle = .warning
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
+            // Deleting a bin must not leave its files hidden with no way back.
+            if var doomed = store.bin(for: id) {
+                for index in doomed.items.indices {
+                    restoreDesktopIcon(&doomed.items[index])
+                }
+            }
             store.removeBin(id: id)
         }
     }

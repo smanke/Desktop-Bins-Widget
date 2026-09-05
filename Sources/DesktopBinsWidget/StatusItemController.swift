@@ -49,8 +49,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let labelsItem = menu.addItem(withTitle: "Show Labels", action: #selector(toggleLabels), keyEquivalent: "", target: self)
         labelsItem.state = settings.showLabels ? .on : .off
 
+        let hideItem = menu.addItem(withTitle: "Hide Desktop Icons for Items in Bins", action: #selector(toggleHideDesktopIcons), keyEquivalent: "", target: self)
+        hideItem.state = settings.hideDesktopIcons ? .on : .off
+
         menu.addItem(.separator())
         menu.addItem(withTitle: "Remove Missing Items", action: #selector(removeMissing), keyEquivalent: "", target: self)
+        menu.addItem(withTitle: "Show All Hidden Desktop Icons", action: #selector(unhideAll), keyEquivalent: "", target: self)
         menu.addItem(withTitle: "Bring All Bins to Main Display", action: #selector(consolidate), keyEquivalent: "", target: self)
 
         let visibilityTitle = panelController.isVisible ? "Hide All Bins" : "Show All Bins"
@@ -72,6 +76,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func newBin() { panelController.addBinAtCenterOfMainScreen() }
     @objc private func toggleLabels() { SettingsStore.shared.showLabels.toggle() }
+    @objc private func toggleHideDesktopIcons() { SettingsStore.shared.hideDesktopIcons.toggle() }
+
+    @objc private func unhideAll() {
+        let restored = panelController.restoreAllDesktopIcons()
+        let alert = NSAlert()
+        alert.messageText = restored == 0 ? "Nothing was hidden" : "Restored \(restored) desktop icon(s)"
+        alert.informativeText = restored == 0
+            ? "No bin item currently has its desktop icon hidden."
+            : "Those files are visible on the Desktop again. They are still in their bins."
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
     @objc private func toggleVisibility() { panelController.setAllVisible(!panelController.isVisible) }
     @objc private func toggleLaunchAtLogin() { SettingsStore.shared.launchAtLogin.toggle() }
     @objc private func showSettings() { settingsWindowController.show() }

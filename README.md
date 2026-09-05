@@ -30,6 +30,8 @@ layer — widget-like in feel, fully interactive in practice.
   main display rather than vanishing when that monitor is absent
 - "Bring All Bins to Main Display" rescues panels stranded on a monitor that
   is no longer attached
+- Desktop icons of items in a bin are hidden, so the same file isn't shown twice
+- Each set of monitors remembers its own arrangement
 - Optional launch at login
 
 ## Installing
@@ -76,6 +78,19 @@ be resolved. Items whose file no longer exists are drawn dimmed, and
 Layout follows list order, so panels are inherently gap-free — there is no
 grid snapping to configure, unlike Desktop Bins.
 
+### Hiding desktop icons
+
+An item dropped in from the Desktop would otherwise appear twice — once in
+the bin and once loose on the desktop — so the file is marked hidden and
+Finder stops drawing it. Nothing is moved or renamed, so it is undone by
+clearing the flag: removing the item from a bin, deleting the bin, or turning
+the setting off all restore it, and "Show All Hidden Desktop Icons" in the
+menu is the catch-all.
+
+Only files sitting directly on the Desktop are touched. Hiding something
+dragged in from Documents would make it vanish from a folder the user is
+actively browsing, which is not what "hide the desktop icon" means.
+
 ### Multiple displays
 
 Each panel stores the stable UUID of its display
@@ -91,3 +106,8 @@ user actually moves it. Offsets from a larger monitor are clamped into the
 fallback screen so a panel can't land off-screen. "Bring All Bins to Main
 Display" in the menu tiles everything onto the main display as an emergency
 recovery.
+
+Each panel also remembers a separate arrangement per monitor setup, keyed by
+a signature of the attached displays. Moving between a desk, a second desk
+and the bare laptop restores whatever layout was last used with each, rather
+than keeping a single position that the previous setup overwrites.

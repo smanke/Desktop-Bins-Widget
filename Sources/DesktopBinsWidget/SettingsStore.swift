@@ -12,6 +12,7 @@ final class SettingsStore: ObservableObject {
         static let iconSize = "iconSize"
         static let showLabels = "showLabels"
         static let panelOpacity = "panelOpacity"
+        static let hideDesktopIcons = "hideDesktopIcons"
     }
 
     static let defaultIconSize: Double = 48
@@ -35,17 +36,25 @@ final class SettingsStore: ObservableObject {
     @Published var showLabels: Bool { didSet { save(); onChange?() } }
     @Published var panelOpacity: Double { didSet { save(); onChange?() } }
 
+    /// Hide the desktop icon of an item once it lives in a bin, so the same
+    /// file isn't shown twice. Only applies to items sitting on the Desktop.
+    @Published var hideDesktopIcons: Bool { didSet { save(); onHideDesktopIconsChanged?(hideDesktopIcons) } }
+
+    var onHideDesktopIconsChanged: ((Bool) -> Void)?
+
     private init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
             Key.iconSize: Self.defaultIconSize,
             Key.showLabels: true,
-            Key.panelOpacity: Self.defaultOpacity
+            Key.panelOpacity: Self.defaultOpacity,
+            Key.hideDesktopIcons: true
         ])
         launchAtLogin = LaunchAtLoginController.isEnabled
         iconSize = defaults.double(forKey: Key.iconSize)
         showLabels = defaults.bool(forKey: Key.showLabels)
         panelOpacity = defaults.double(forKey: Key.panelOpacity)
+        hideDesktopIcons = defaults.bool(forKey: Key.hideDesktopIcons)
     }
 
     private func save() {
@@ -53,6 +62,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(iconSize, forKey: Key.iconSize)
         defaults.set(showLabels, forKey: Key.showLabels)
         defaults.set(panelOpacity, forKey: Key.panelOpacity)
+        defaults.set(hideDesktopIcons, forKey: Key.hideDesktopIcons)
     }
 
     /// Cell size derived from the icon size, leaving room for the label.
@@ -63,5 +73,6 @@ final class SettingsStore: ObservableObject {
         iconSize = Self.defaultIconSize
         showLabels = true
         panelOpacity = Self.defaultOpacity
+        hideDesktopIcons = true
     }
 }
