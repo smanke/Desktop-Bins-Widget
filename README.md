@@ -44,6 +44,19 @@ Download the `.dmg` from the [latest release](https://github.com/smanke/Desktop-
 open it, and drag the app onto Applications. The image and the app inside are
 both notarized, so it opens without a Gatekeeper warning.
 
+## Icon
+
+`Tools/generate_icon.swift` draws the periodic-tile icon and writes two
+variants: the full tile, and a nameless one with a larger symbol for the 16
+to 64pt sizes where the name would just be a smudge. Rebuild with:
+
+```bash
+swift Tools/generate_icon.swift
+```
+
+then regenerate `Resources/AppIcon.icns` from `Resources/AppIcon.iconset`
+with `iconutil -c icns`.
+
 ## Building
 
 ```bash
