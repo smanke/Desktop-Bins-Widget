@@ -69,8 +69,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let loginItem = menu.addItem(withTitle: "Open at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "", target: self)
         loginItem.state = settings.launchAtLogin ? .on : .off
 
-        let updateItem = menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "", target: self)
-        updateItem.toolTip = "Download and install the latest release from GitHub, then restart."
+        // A release found by the launch check is offered here rather than prompted for,
+        // so an install only ever follows a click the user made.
+        if let pending = UpdateAvailability.shared.pending {
+            let updateItem = menu.addItem(withTitle: "Update to \(pending)…", action: #selector(checkForUpdates), keyEquivalent: "", target: self)
+            updateItem.toolTip = "A newer release is available. Downloading and installing it needs your confirmation."
+        } else {
+            let updateItem = menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "", target: self)
+            updateItem.toolTip = "Download and install the latest release from GitHub, then restart."
+        }
 
         let autoUpdateItem = menu.addItem(withTitle: "Check for Updates at Launch", action: #selector(toggleLaunchUpdateCheck), keyEquivalent: "", target: self)
         autoUpdateItem.state = settings.checkForUpdatesAtLaunch ? .on : .off

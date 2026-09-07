@@ -40,11 +40,25 @@ enum UpdateController {
                 if silent, SettingsStore.shared.skippedUpdateVersion == release.version {
                     return
                 }
-                switch confirmInstall(newVersion: release.version, current: current, allowSkip: silent) {
+
+                // The launch check never installs. It only records that something is
+                // available, and the menu surfaces it. Prompting from a background path
+                // in a menu bar app is not safe: with no active app to own it, the modal
+                // is not reliably shown and runModal() hands back its default button —
+                // which would silently install an update nobody agreed to.
+                if silent {
+                    UpdateAvailability.shared.pending = release.version
+                    NSLog("DesktopBinsWidget: update \(release.version) available; surfaced in the menu")
+                    return
+                }
+
+                let allowSkip = UpdateAvailability.shared.pending == release.version
+                switch confirmInstall(newVersion: release.version, current: current, allowSkip: allowSkip) {
                 case .cancel:
                     return
                 case .skip:
                     SettingsStore.shared.skippedUpdateVersion = release.version
+                    UpdateAvailability.shared.pending = nil
                     return
                 case .install:
                     break
@@ -248,6 +262,21 @@ enum UpdateController {
     }
 
     private static func confirmInstall(newVersion: String, current: String, allowSkip: Bool) -> ConfirmChoice {
+        // An accessory app has no Dock presence, and a modal it puts up cannot
+        // reliably take focus — runModal() then returns its default button without
+        // ever showing anything. Becoming a regular app for the duration gives the
+        // alert something to belong to; the policy is restored either way.
+        //
+        // Restoring the old policy synchronously does not take: AppKit ignores a
+        // .regular -> .accessory transition while the app is still active from the
+        // modal, which would leave a menu bar app sitting in the Dock. Doing it on
+        // the next runloop turn, once the alert is gone, works.
+        let previousPolicy = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.regular)
+        defer {
+            DispatchQueue.main.async { NSApp.setActivationPolicy(previousPolicy) }
+        }
+
         let alert = NSAlert()
         alert.messageText = "Update to version \(newVersion)?"
         alert.informativeText = """
