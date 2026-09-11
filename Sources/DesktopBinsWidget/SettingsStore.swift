@@ -12,7 +12,9 @@ final class SettingsStore: ObservableObject {
         static let iconSize = "iconSize"
         static let showLabels = "showLabels"
         static let panelOpacity = "panelOpacity"
-        static let hideDesktopIcons = "hideDesktopIcons"
+        static let moveDesktopFiles = "moveDesktopFiles"
+        /// Pre-1.1.8 setting, read once so the choice carries over.
+        static let legacyHideDesktopIcons = "hideDesktopIcons"
         static let requiresCommandToMove = "requiresCommandToMove"
         static let checkForUpdatesAtLaunch = "checkForUpdatesAtLaunch"
         static let skippedUpdateVersion = "skippedUpdateVersion"
@@ -39,11 +41,11 @@ final class SettingsStore: ObservableObject {
     @Published var showLabels: Bool { didSet { save(); onChange?() } }
     @Published var panelOpacity: Double { didSet { save(); onChange?() } }
 
-    /// Hide the desktop icon of an item once it lives in a bin, so the same
-    /// file isn't shown twice. Only applies to items sitting on the Desktop.
-    @Published var hideDesktopIcons: Bool { didSet { save(); onHideDesktopIconsChanged?(hideDesktopIcons) } }
-
-    var onHideDesktopIconsChanged: ((Bool) -> Void)?
+    /// Move a Desktop file into `~/Desktop Bins` when it is put in a bin, so
+    /// the same file isn't shown twice and a bin's contents stay local to
+    /// this Mac. Affects items dropped from now on; files already moved stay
+    /// put until they leave their bin.
+    @Published var moveDesktopFiles: Bool { didSet { save() } }
 
     /// Shown to the user as "Click Title Bar to Move". Checked means a plain
     /// drag will *not* move a panel — Command-drag is required — which is
@@ -69,7 +71,7 @@ final class SettingsStore: ObservableObject {
             Key.iconSize: Self.defaultIconSize,
             Key.showLabels: true,
             Key.panelOpacity: Self.defaultOpacity,
-            Key.hideDesktopIcons: true,
+            Key.moveDesktopFiles: defaults.object(forKey: Key.legacyHideDesktopIcons) as? Bool ?? true,
             Key.requiresCommandToMove: true,
             Key.checkForUpdatesAtLaunch: true
         ])
@@ -77,7 +79,7 @@ final class SettingsStore: ObservableObject {
         iconSize = defaults.double(forKey: Key.iconSize)
         showLabels = defaults.bool(forKey: Key.showLabels)
         panelOpacity = defaults.double(forKey: Key.panelOpacity)
-        hideDesktopIcons = defaults.bool(forKey: Key.hideDesktopIcons)
+        moveDesktopFiles = defaults.bool(forKey: Key.moveDesktopFiles)
         requiresCommandToMove = defaults.bool(forKey: Key.requiresCommandToMove)
         checkForUpdatesAtLaunch = defaults.bool(forKey: Key.checkForUpdatesAtLaunch)
     }
@@ -87,7 +89,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(iconSize, forKey: Key.iconSize)
         defaults.set(showLabels, forKey: Key.showLabels)
         defaults.set(panelOpacity, forKey: Key.panelOpacity)
-        defaults.set(hideDesktopIcons, forKey: Key.hideDesktopIcons)
+        defaults.set(moveDesktopFiles, forKey: Key.moveDesktopFiles)
         defaults.set(requiresCommandToMove, forKey: Key.requiresCommandToMove)
         defaults.set(checkForUpdatesAtLaunch, forKey: Key.checkForUpdatesAtLaunch)
     }
@@ -107,7 +109,7 @@ final class SettingsStore: ObservableObject {
         iconSize = Self.defaultIconSize
         showLabels = true
         panelOpacity = Self.defaultOpacity
-        hideDesktopIcons = true
+        moveDesktopFiles = true
         requiresCommandToMove = true
         checkForUpdatesAtLaunch = true
     }

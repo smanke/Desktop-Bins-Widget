@@ -49,8 +49,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let labelsItem = menu.addItem(withTitle: "Show Labels", action: #selector(toggleLabels), keyEquivalent: "", target: self)
         labelsItem.state = settings.showLabels ? .on : .off
 
-        let hideItem = menu.addItem(withTitle: "Hide Desktop Icons for Items in Bins", action: #selector(toggleHideDesktopIcons), keyEquivalent: "", target: self)
-        hideItem.state = settings.hideDesktopIcons ? .on : .off
+        let moveFilesItem = menu.addItem(withTitle: "Move Desktop Files into Bins", action: #selector(toggleMoveDesktopFiles), keyEquivalent: "", target: self)
+        moveFilesItem.state = settings.moveDesktopFiles ? .on : .off
+        moveFilesItem.toolTip = "A file dragged in from the Desktop moves to the Desktop Bins folder in your home folder, which doesn't sync. It goes back to the Desktop when it leaves its bin."
 
         let moveItem = menu.addItem(withTitle: "Click Title Bar to Move", action: #selector(toggleClickToMove), keyEquivalent: "", target: self)
         moveItem.state = settings.requiresCommandToMove ? .on : .off
@@ -60,7 +61,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "Remove Missing Items", action: #selector(removeMissing), keyEquivalent: "", target: self)
-        menu.addItem(withTitle: "Show All Hidden Desktop Icons", action: #selector(unhideAll), keyEquivalent: "", target: self)
+        menu.addItem(withTitle: "Show Desktop Bins Folder", action: #selector(revealLocalFolder), keyEquivalent: "", target: self)
+        menu.addItem(withTitle: "Return All Files to Desktop…", action: #selector(returnAllToDesktop), keyEquivalent: "", target: self)
         menu.addItem(withTitle: "Bring All Bins to Main Display", action: #selector(consolidate), keyEquivalent: "", target: self)
 
         let visibilityTitle = panelController.isVisible ? "Hide All Bins" : "Show All Bins"
@@ -95,20 +97,40 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func newBin() { panelController.addBinAtCenterOfMainScreen() }
     @objc private func toggleLabels() { SettingsStore.shared.showLabels.toggle() }
-    @objc private func toggleHideDesktopIcons() { SettingsStore.shared.hideDesktopIcons.toggle() }
+    @objc private func toggleMoveDesktopFiles() { SettingsStore.shared.moveDesktopFiles.toggle() }
     @objc private func toggleClickToMove() { SettingsStore.shared.requiresCommandToMove.toggle() }
 
-    @objc private func unhideAll() {
-        let restored = panelController.restoreAllDesktopIcons()
-        let alert = NSAlert()
-        alert.messageText = restored == 0 ? "Nothing was hidden" : "Restored \(restored) desktop icon(s)"
-        alert.informativeText = restored == 0
-            ? "No bin item currently has its desktop icon hidden."
-            : "Those files are visible on the Desktop again. They are still in their bins."
-        alert.addButton(withTitle: "OK")
+    @objc private func revealLocalFolder() {
+        let folder = LocalBinFolder.url
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([folder])
+    }
+
+    @objc private func returnAllToDesktop() {
+        let confirm = NSAlert()
+        confirm.messageText = "Return all files to the Desktop?"
+        confirm.informativeText = "Every file a bin moved into the Desktop Bins folder goes back to the Desktop, which syncs it to your other computers again. The items stay in their bins."
+        confirm.addButton(withTitle: "Return Files")
+        confirm.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        let result = panelController.returnAllFilesToDesktop()
+        let alert = NSAlert()
+        if result.failed.isEmpty {
+            alert.messageText = result.returned == 0 ? "Nothing to return" : "Returned \(result.returned) file(s)"
+            alert.informativeText = result.returned == 0
+                ? "No bin is holding a file moved from the Desktop."
+                : "They are back on the Desktop, and still in their bins."
+        } else {
+            alert.messageText = "Returned \(result.returned), couldn't return \(result.failed.count)"
+            alert.informativeText = result.failed.joined(separator: "\n")
+            alert.alertStyle = .warning
+        }
+        alert.addButton(withTitle: "OK")
         alert.runModal()
     }
+
     @objc private func toggleVisibility() { panelController.setAllVisible(!panelController.isVisible) }
     @objc private func toggleLaunchAtLogin() { SettingsStore.shared.launchAtLogin.toggle() }
     @objc private func checkForUpdates() { UpdateController.checkForUpdates() }

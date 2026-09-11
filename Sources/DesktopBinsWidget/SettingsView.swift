@@ -17,7 +17,7 @@ struct SettingsView: View {
                 slider(label: "Icon size", value: $settings.iconSize, range: 24...96, step: 8, suffix: "pt")
                 slider(label: "Panel opacity", value: $settings.panelOpacity, range: 0.3...1.0, step: 0.05, suffix: "")
                 Toggle("Show file names under icons", isOn: $settings.showLabels)
-                Toggle("Hide desktop icons for items in bins", isOn: $settings.hideDesktopIcons)
+                Toggle("Move Desktop files into bins", isOn: $settings.moveDesktopFiles)
                 Toggle("Click Title Bar to Move", isOn: $settings.requiresCommandToMove)
                     .help("On: hold ⌘ and drag the title bar to move a bin. Off: drag the title bar directly.")
                 Text(settings.requiresCommandToMove
@@ -26,7 +26,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Files you drag in from the Desktop are marked hidden so the same item isn't shown twice. Nothing is moved or renamed, and removing an item from a bin puts its icon straight back.")
+                Text("A file you drag in from the Desktop moves to the Desktop Bins folder in your home folder, so it isn't shown twice. That folder doesn't sync, so your bins stay on this Mac and other computers just see the file leave their Desktop. Removing it from its bin puts it back on the Desktop. Items from anywhere else are never moved.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

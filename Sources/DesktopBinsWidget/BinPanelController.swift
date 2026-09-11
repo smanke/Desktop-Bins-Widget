@@ -17,9 +17,6 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         super.init()
         store.onChange = { [weak self] in self?.syncWindows() }
         SettingsStore.shared.onChange = { [weak self] in self?.redrawAll() }
-        SettingsStore.shared.onHideDesktopIconsChanged = { [weak self] hide in
-            self?.applyDesktopIconHiding(hide)
-        }
         syncWindows()
 
         NotificationCenter.default.addObserver(
@@ -30,10 +27,7 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         )
         adoptCurrentDisplayForUnpinnedBins()
         recordLayoutForCurrentConfigurationIfNew()
-        // Bring existing items in line with the setting: dropping an item is
-        // not the only way one can end up in a bin, and the setting may have
-        // been changed while the app was not running.
-        applyDesktopIconHiding(SettingsStore.shared.hideDesktopIcons)
+        repairLegacyHiddenItems()
     }
 
     deinit {
@@ -294,81 +288,115 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
     }
 
 
-    // MARK: - Hiding desktop icons
+    // MARK: - Moving Desktop files
 
-    /// Once an item lives in a bin, its desktop icon is redundant, so the
-    /// file is marked hidden and Finder stops drawing it on the desktop.
-    ///
-    /// Only files sitting directly on the Desktop are touched: hiding an item
-    /// dragged in from Documents would make it vanish from a folder the user
-    /// is actively browsing, which is not what they asked for. Nothing is
-    /// moved or renamed, so the change is undone by simply clearing the flag.
-    private func isOnDesktop(_ url: URL) -> Bool {
-        guard let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else { return false }
-        return url.deletingLastPathComponent().resolvingSymlinksInPath().path
-            == desktop.resolvingSymlinksInPath().path
-    }
-
-    @discardableResult
-    private func setHidden(_ url: URL, _ hidden: Bool) -> Bool {
-        var target = url
-        var values = URLResourceValues()
-        values.isHidden = hidden
+    /// Builds the item for a dropped file, moving it off the Desktop into
+    /// `~/Desktop Bins` when the setting allows. A file that cannot be moved
+    /// is still added, as a plain reference, so a drop never loses anything.
+    private func makeItem(forDropped url: URL) -> (item: BinItem, failure: Error?) {
+        guard SettingsStore.shared.moveDesktopFiles, LocalBinFolder.isOnDesktop(url) else {
+            return (BinItem(url: url), nil)
+        }
         do {
-            try target.setResourceValues(values)
-            return true
+            let moved = try LocalBinFolder.moveIn(url)
+            return (BinItem(url: moved, desktopName: url.lastPathComponent), nil)
         } catch {
-            NSLog("DesktopBinsWidget: could not \(hidden ? "hide" : "unhide") \(url.lastPathComponent): \(error)")
-            return false
+            return (BinItem(url: url), error)
         }
     }
 
-    /// Hides an item's desktop icon if the setting allows it, recording that
-    /// we were the ones who hid it.
-    private func hideDesktopIconIfNeeded(_ item: inout BinItem) {
-        guard SettingsStore.shared.hideDesktopIcons, !item.didHideOriginal,
-              let url = item.resolveURL(), isOnDesktop(url) else { return }
-        if setHidden(url, true) { item.didHideOriginal = true }
-    }
-
-    /// Puts back anything this app hid — used when an item leaves a bin, a
-    /// bin is deleted, or the setting is turned off.
-    private func restoreDesktopIcon(_ item: inout BinItem) {
-        guard item.didHideOriginal, let url = item.resolveURL() else {
-            item.didHideOriginal = false
-            return
+    /// Sends a moved file back to the Desktop as its item leaves a bin.
+    ///
+    /// If another bin still holds the same file it stays where it is, and
+    /// that bin takes over returning it later. Throws if the move fails, so
+    /// callers keep the item rather than stranding its file out of sight.
+    private func release(_ item: BinItem, leaving binID: UUID) throws {
+        guard let name = item.desktopName, let url = item.resolveURL() else { return }
+        for var other in store.bins where other.id != binID {
+            if let index = other.items.firstIndex(where: { $0.resolveURL()?.path == url.path }) {
+                other.items[index].desktopName = name
+                commit(other)
+                return
+            }
         }
-        setHidden(url, false)
-        item.didHideOriginal = false
+        _ = try LocalBinFolder.moveToDesktop(url, name: name)
     }
 
-    /// Applies the setting across every existing item, in both directions.
-    @discardableResult
-    func applyDesktopIconHiding(_ hide: Bool) -> Int {
-        var changed = 0
+    /// Safety valve: puts every moved file back on the Desktop. Items stay in
+    /// their bins, now pointing at the Desktop copy. Returns how many were
+    /// returned and the names of any that could not be.
+    func returnAllFilesToDesktop() -> (returned: Int, failed: [String]) {
+        var returned = 0
+        var failed: [String] = []
         for var bin in store.bins {
-            var items = bin.items
-            for index in items.indices {
-                let before = items[index].didHideOriginal
-                if hide {
-                    hideDesktopIconIfNeeded(&items[index])
-                } else {
-                    restoreDesktopIcon(&items[index])
+            var changed = false
+            for index in bin.items.indices {
+                guard let name = bin.items[index].desktopName else { continue }
+                guard let url = bin.items[index].resolveURL() else {
+                    bin.items[index].desktopName = nil
+                    changed = true
+                    continue
                 }
-                if items[index].didHideOriginal != before { changed += 1 }
+                do {
+                    let back = try LocalBinFolder.moveToDesktop(url, name: name)
+                    bin.items[index].relocate(to: back)
+                    bin.items[index].desktopName = nil
+                    returned += 1
+                    changed = true
+                } catch {
+                    NSLog("DesktopBinsWidget: could not return \(name) to the Desktop: \(error)")
+                    failed.append(name)
+                }
             }
-            if items != bin.items {
-                bin.items = items
-                commit(bin)
-            }
+            if changed { commit(bin) }
         }
-        return changed
+        return (returned, failed)
     }
 
-    /// Safety valve: unhide everything, whatever the setting says.
-    @discardableResult
-    func restoreAllDesktopIcons() -> Int {
-        applyDesktopIconHiding(false)
+    /// One-time repair for Desktop files that versions before 1.1.8 marked
+    /// hidden. The flag synced through OneDrive and left invisible files on
+    /// other computers. Each is moved into `~/Desktop Bins` as if it had just
+    /// been dropped — which takes it off every other Desktop — and unhidden
+    /// wherever it ends up.
+    private func repairLegacyHiddenItems() {
+        for var bin in store.bins {
+            var changed = false
+            for index in bin.items.indices where bin.items[index].didHideOriginal {
+                bin.items[index].didHideOriginal = false
+                changed = true
+                guard var url = bin.items[index].resolveURL() else { continue }
+
+                if SettingsStore.shared.moveDesktopFiles, LocalBinFolder.isOnDesktop(url) {
+                    do {
+                        let moved = try LocalBinFolder.moveIn(url)
+                        bin.items[index].relocate(to: moved)
+                        bin.items[index].desktopName = url.lastPathComponent
+                        url = moved
+                    } catch {
+                        NSLog("DesktopBinsWidget: could not move \(url.lastPathComponent) off the Desktop: \(error)")
+                    }
+                }
+
+                var values = URLResourceValues()
+                values.isHidden = false
+                do {
+                    try url.setResourceValues(values)
+                } catch {
+                    NSLog("DesktopBinsWidget: could not unhide \(url.lastPathComponent): \(error)")
+                }
+            }
+            if changed { commit(bin) }
+        }
+    }
+
+    private func presentMoveFailure(_ message: String, names: [String]) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = names.joined(separator: "\n")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     // MARK: - BinPanelViewDelegate
@@ -427,17 +455,26 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         guard var bin = store.bin(for: view.bin.id) else { return }
         // Ignore anything already held, so dropping twice doesn't duplicate.
         let existing = Set(bin.items.map(\.path))
-        var newItems = urls
-            .filter { !existing.contains($0.path) }
-            .map { BinItem(url: $0) }
-        guard !newItems.isEmpty else { return }
-        for index in newItems.indices {
-            hideDesktopIconIfNeeded(&newItems[index])
+        var newItems: [BinItem] = []
+        var failed: [String] = []
+        for url in urls where !existing.contains(url.path) {
+            let result = makeItem(forDropped: url)
+            newItems.append(result.item)
+            if let error = result.failure {
+                NSLog("DesktopBinsWidget: could not move \(url.lastPathComponent) off the Desktop: \(error)")
+                failed.append(url.lastPathComponent)
+            }
         }
+        guard !newItems.isEmpty else { return }
 
         let insertAt = min(max(index, 0), bin.items.count)
         bin.items.insert(contentsOf: newItems, at: insertAt)
         commit(bin)
+
+        if !failed.isEmpty {
+            presentMoveFailure("Couldn't move some items off the Desktop",
+                               names: failed + ["", "They were added to the bin but are still on the Desktop."])
+        }
     }
 
     func panel(_ view: BinPanelView, didReorderFrom oldIndex: Int, to newIndex: Int) {
@@ -480,16 +517,25 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
                 self.panel(view, didOpenItemAt: index)
             }
             menu.addItem(withActionTitle: "Reveal in Finder") { [weak self] in
-                // Reveal the real item: an alias on the Desktop may itself be
-                // hidden by us, which would make revealing it useless.
+                // Reveal the real item rather than an alias pointing at it.
                 guard let url = self?.store.bin(for: id)?.items[safe: index]?.resolvedTargetURL() else { return }
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
             menu.addItem(withActionTitle: "Remove from Bin") { [weak self] in
                 guard let self, var bin = self.store.bin(for: id), bin.items.indices.contains(index) else { return }
-                var removed = bin.items.remove(at: index)
-                // Put the desktop icon back now that it has left the bin.
-                self.restoreDesktopIcon(&removed)
+                let removed = bin.items[index]
+                // A file this app moved off the Desktop goes back there as it
+                // leaves the bin. If that fails it stays in the bin, so the
+                // file is never left in ~/Desktop Bins with nothing showing it.
+                do {
+                    try self.release(removed, leaving: id)
+                } catch {
+                    NSLog("DesktopBinsWidget: could not return \(removed.displayName) to the Desktop: \(error)")
+                    self.presentMoveFailure("Couldn't put “\(removed.displayName)” back on the Desktop",
+                                            names: [error.localizedDescription, "", "It is still in the bin."])
+                    return
+                }
+                bin.items.remove(at: index)
                 self.commit(bin)
             }
             menu.addItem(.separator())
@@ -555,19 +601,33 @@ final class BinPanelController: NSObject, BinPanelViewDelegate {
         alert.messageText = "Delete “\(bin.title)”?"
         alert.informativeText = bin.items.isEmpty
             ? "This removes the bin."
-            : "This removes the bin and its \(bin.items.count) shortcut(s). The original files are not deleted."
+            : "This removes the bin. Files it moved off the Desktop are put back there; nothing is deleted."
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
-            // Deleting a bin must not leave its files hidden with no way back.
-            if var doomed = store.bin(for: id) {
-                for index in doomed.items.indices {
-                    restoreDesktopIcon(&doomed.items[index])
+            // Deleting a bin must not leave its files in ~/Desktop Bins with
+            // nothing showing them. Anything that can't go back keeps the bin
+            // alive, holding just those items.
+            guard var doomed = store.bin(for: id) else { return }
+            var stranded: [BinItem] = []
+            for item in doomed.items {
+                do {
+                    try release(item, leaving: id)
+                } catch {
+                    NSLog("DesktopBinsWidget: could not return \(item.displayName) to the Desktop: \(error)")
+                    stranded.append(item)
                 }
             }
-            store.removeBin(id: id)
+            if stranded.isEmpty {
+                store.removeBin(id: id)
+            } else {
+                doomed.items = stranded
+                commit(doomed)
+                presentMoveFailure("Couldn't put everything back on the Desktop",
+                                   names: stranded.map(\.displayName) + ["", "The bin was kept, holding just these."])
+            }
         }
     }
 }

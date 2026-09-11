@@ -30,7 +30,8 @@ layer — widget-like in feel, fully interactive in practice.
   main display rather than vanishing when that monitor is absent
 - "Bring All Bins to Main Display" rescues panels stranded on a monitor that
   is no longer attached
-- Desktop icons of items in a bin are hidden, so the same file isn't shown twice
+- Files dragged in from the Desktop move to `~/Desktop Bins`, so the same file
+  isn't shown twice and bins stay local to each Mac, even with a synced Desktop
 - Each set of monitors remembers its own arrangement
 - Item count in the title bar can be turned off per bin
 - Optional Command-drag to move, so bins can't be nudged by accident
@@ -95,18 +96,30 @@ be resolved. Items whose file no longer exists are drawn dimmed, and
 Layout follows list order, so panels are inherently gap-free — there is no
 grid snapping to configure, unlike Desktop Bins.
 
-### Hiding desktop icons
+### Moving Desktop files into bins
 
 An item dropped in from the Desktop would otherwise appear twice — once in
-the bin and once loose on the desktop — so the file is marked hidden and
-Finder stops drawing it. Nothing is moved or renamed, so it is undone by
-clearing the flag: removing the item from a bin, deleting the bin, or turning
-the setting off all restore it, and "Show All Hidden Desktop Icons" in the
-menu is the catch-all.
+the bin and once loose on the desktop — so the file is moved into
+`~/Desktop Bins`, a folder in the home folder that nothing syncs. Removing the
+item from its bin, or deleting the bin, moves it back to the Desktop under its
+original name (numbered if that name has since been taken — nothing is ever
+overwritten). "Return All Files to Desktop…" in the menu is the catch-all, and
+"Show Desktop Bins Folder" opens the folder.
 
-Only files sitting directly on the Desktop are touched. Hiding something
-dragged in from Documents would make it vanish from a folder the user is
-actively browsing, which is not what "hide the desktop icon" means.
+Bins are local to each Mac. The layout lives in Application Support, and a
+Desktop synced by OneDrive or iCloud would otherwise carry whatever the app did
+to a file to every other computer. Versions before 1.1.8 marked files hidden
+instead, and the hidden flag synced: other computers ended up with invisible
+files and no bins to show them in. Moving the file out means other computers
+just see it leave their Desktop. The first launch of 1.1.8 moves any file an
+earlier version hid and clears the flag.
+
+Moves are coordinated with the file's provider, so a cloud-only placeholder is
+downloaded as it leaves rather than carried off empty.
+
+Only files sitting directly on the Desktop are moved. Items dragged in from
+anywhere else are referenced where they are — moving something out of a
+folder the user is actively browsing is not what dropping it on a bin asks for.
 
 ### Updating
 
@@ -140,8 +153,7 @@ Keeping aliases to folders on the Desktop is common, and asking macOS for an
 alias file's icon returns the generic alias document rather than the target's
 icon — so a folder alias looked like a blank page. Items therefore resolve
 through an alias before their icon is fetched, and opening or revealing an
-item lands on the real file rather than the alias (which may itself be hidden
-by this app).
+item lands on the real file rather than the alias.
 
 ### Multiple displays
 

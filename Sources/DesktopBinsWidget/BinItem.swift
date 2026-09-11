@@ -10,20 +10,36 @@ struct BinItem: Codable, Equatable, Identifiable {
     var path: String
     var bookmark: Data?
 
-    /// True when this app hid the file so its desktop icon would disappear.
-    /// Tracked so it can be put back exactly when the item leaves the bin —
-    /// files hidden by anything else must be left alone.
+    /// The name the file had on the Desktop, set when this app moved it into
+    /// `~/Desktop Bins`. Tracked so it goes back exactly when it leaves the
+    /// bin — items referenced from anywhere else are never moved.
+    var desktopName: String?
+
+    /// Set by versions before 1.1.8, which marked Desktop files hidden instead
+    /// of moving them. Hidden flags sync, so those files showed up invisible
+    /// on other computers; this is kept only so they can be put right.
     var didHideOriginal: Bool
 
-    init(id: UUID = UUID(), url: URL, didHideOriginal: Bool = false) {
+    init(id: UUID = UUID(), url: URL, desktopName: String? = nil) {
         self.id = id
         self.path = url.path
-        self.bookmark = try? url.bookmarkData(options: [.suitableForBookmarkFile], includingResourceValuesForKeys: nil, relativeTo: nil)
-        self.didHideOriginal = didHideOriginal
+        self.bookmark = Self.bookmark(for: url)
+        self.desktopName = desktopName
+        self.didHideOriginal = false
+    }
+
+    /// Points the item at a file's new location after this app moved it.
+    mutating func relocate(to url: URL) {
+        path = url.path
+        bookmark = Self.bookmark(for: url)
+    }
+
+    private static func bookmark(for url: URL) -> Data? {
+        try? url.bookmarkData(options: [.suitableForBookmarkFile], includingResourceValuesForKeys: nil, relativeTo: nil)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, path, bookmark, didHideOriginal
+        case id, path, bookmark, desktopName, didHideOriginal
     }
 
     init(from decoder: Decoder) throws {
@@ -31,6 +47,7 @@ struct BinItem: Codable, Equatable, Identifiable {
         id = try c.decode(UUID.self, forKey: .id)
         path = try c.decode(String.self, forKey: .path)
         bookmark = try c.decodeIfPresent(Data.self, forKey: .bookmark)
+        desktopName = try c.decodeIfPresent(String.self, forKey: .desktopName)
         didHideOriginal = try c.decodeIfPresent(Bool.self, forKey: .didHideOriginal) ?? false
     }
 
