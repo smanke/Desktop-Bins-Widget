@@ -2,16 +2,20 @@ import AppKit
 
 /// Menu bar entry point. The menu is rebuilt on open so its checkmarks and
 /// counts always reflect current state.
+///
+/// The menu is for doing things; set-and-forget preferences (launch at login,
+/// update checks, moving Desktop files, Command-drag to move) live only in
+/// Settings. Listing every toggle here as well is what made the menu cluttered.
 final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let panelController: BinPanelController
     private let settingsWindowController = SettingsWindowController()
 
     private static let iconSizes: [(String, Double)] = [
-        ("Small (32 pt)", 32),
-        ("Medium (48 pt)", 48),
-        ("Large (64 pt)", 64),
-        ("Extra Large (96 pt)", 96)
+        ("Small Icons", 32),
+        ("Medium Icons", 48),
+        ("Large Icons", 64),
+        ("Extra Large Icons", 96)
     ]
 
     init(panelController: BinPanelController) {
@@ -29,50 +33,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        let settings = SettingsStore.shared
         menu.removeAllItems()
 
+        // Bins
         menu.addItem(withTitle: "New Bin", action: #selector(newBin), keyEquivalent: "n", target: self)
-        menu.addItem(.separator())
-
-        let sizeItem = menu.addItem(withTitle: "Icon Size", action: nil, keyEquivalent: "", target: nil)
-        let sizeMenu = NSMenu()
-        for (name, value) in Self.iconSizes {
-            let item = NSMenuItem(title: name, action: #selector(setIconSize(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = value
-            item.state = settings.iconSize == value ? .on : .off
-            sizeMenu.addItem(item)
-        }
-        sizeItem.submenu = sizeMenu
-
-        let labelsItem = menu.addItem(withTitle: "Show Labels", action: #selector(toggleLabels), keyEquivalent: "", target: self)
-        labelsItem.state = settings.showLabels ? .on : .off
-
-        let moveFilesItem = menu.addItem(withTitle: "Move Desktop Files into Bins", action: #selector(toggleMoveDesktopFiles), keyEquivalent: "", target: self)
-        moveFilesItem.state = settings.moveDesktopFiles ? .on : .off
-        moveFilesItem.toolTip = "A file dragged in from the Desktop moves to the Desktop Bins folder in your home folder, which doesn't sync. It goes back to the Desktop when it leaves its bin."
-
-        let moveItem = menu.addItem(withTitle: "Click Title Bar to Move", action: #selector(toggleClickToMove), keyEquivalent: "", target: self)
-        moveItem.state = settings.requiresCommandToMove ? .on : .off
-        moveItem.toolTip = settings.requiresCommandToMove
-            ? "On: hold ⌘ and drag a bin's title bar to move it. Turn off to drag it directly."
-            : "Off: drag a bin's title bar directly to move it. Turn on to require ⌘ and drag."
-
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Remove Missing Items", action: #selector(removeMissing), keyEquivalent: "", target: self)
-        menu.addItem(withTitle: "Show Desktop Bins Folder", action: #selector(revealLocalFolder), keyEquivalent: "", target: self)
-        menu.addItem(withTitle: "Return All Files to Desktop…", action: #selector(returnAllToDesktop), keyEquivalent: "", target: self)
-        menu.addItem(withTitle: "Bring All Bins to Main Display", action: #selector(consolidate), keyEquivalent: "", target: self)
-
         let visibilityTitle = panelController.isVisible ? "Hide All Bins" : "Show All Bins"
         menu.addItem(withTitle: visibilityTitle, action: #selector(toggleVisibility), keyEquivalent: "", target: self)
+        menu.addItem(.separator())
 
-        let loginItem = menu.addItem(withTitle: "Open at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "", target: self)
-        loginItem.state = settings.launchAtLogin ? .on : .off
+        menu.addItem(submenuTitled: "View", viewMenu())
+        menu.addItem(submenuTitled: "Tools", toolsMenu())
+        menu.addItem(.separator())
 
-        // A release found by the launch check is offered here rather than prompted for,
-        // so an install only ever follows a click the user made.
+        // App. A release found by the launch check is offered here rather than
+        // prompted for, so an install only ever follows a click the user made.
         if let pending = UpdateAvailability.shared.pending {
             let updateItem = menu.addItem(withTitle: "Update to \(pending)…", action: #selector(checkForUpdates), keyEquivalent: "", target: self)
             updateItem.toolTip = "A newer release is available. Downloading and installing it needs your confirmation."
@@ -80,10 +54,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let updateItem = menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "", target: self)
             updateItem.toolTip = "Download and install the latest release from GitHub, then restart."
         }
-
-        let autoUpdateItem = menu.addItem(withTitle: "Check for Updates at Launch", action: #selector(toggleLaunchUpdateCheck), keyEquivalent: "", target: self)
-        autoUpdateItem.state = settings.checkForUpdatesAtLaunch ? .on : .off
-        autoUpdateItem.toolTip = "Look for a newer release shortly after the app opens. You are only asked if one is found."
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",", target: self)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Desktop Bins Widget", action: #selector(quit), keyEquivalent: "q", target: self)
@@ -95,10 +65,34 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(versionItem)
     }
 
+    /// Appearance tweaks made while looking at the bins, kept one click away.
+    private func viewMenu() -> NSMenu {
+        let settings = SettingsStore.shared
+        let menu = NSMenu()
+        for (name, value) in Self.iconSizes {
+            let item = menu.addItem(withTitle: name, action: #selector(setIconSize(_:)), keyEquivalent: "", target: self)
+            item.representedObject = value
+            item.state = settings.iconSize == value ? .on : .off
+        }
+        menu.addItem(.separator())
+        let labelsItem = menu.addItem(withTitle: "Show Labels", action: #selector(toggleLabels), keyEquivalent: "", target: self)
+        labelsItem.state = settings.showLabels ? .on : .off
+        return menu
+    }
+
+    /// Occasional maintenance and recovery, out of the way of everyday use.
+    private func toolsMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Bring All Bins to Main Display…", action: #selector(consolidate), keyEquivalent: "", target: self)
+        menu.addItem(withTitle: "Remove Missing Items", action: #selector(removeMissing), keyEquivalent: "", target: self)
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Show Desktop Bins Folder", action: #selector(revealLocalFolder), keyEquivalent: "", target: self)
+        menu.addItem(withTitle: "Return All Files to Desktop…", action: #selector(returnAllToDesktop), keyEquivalent: "", target: self)
+        return menu
+    }
+
     @objc private func newBin() { panelController.addBinAtCenterOfMainScreen() }
     @objc private func toggleLabels() { SettingsStore.shared.showLabels.toggle() }
-    @objc private func toggleMoveDesktopFiles() { SettingsStore.shared.moveDesktopFiles.toggle() }
-    @objc private func toggleClickToMove() { SettingsStore.shared.requiresCommandToMove.toggle() }
 
     @objc private func revealLocalFolder() {
         let folder = LocalBinFolder.url
@@ -132,9 +126,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleVisibility() { panelController.setAllVisible(!panelController.isVisible) }
-    @objc private func toggleLaunchAtLogin() { SettingsStore.shared.launchAtLogin.toggle() }
     @objc private func checkForUpdates() { UpdateController.checkForUpdates() }
-    @objc private func toggleLaunchUpdateCheck() { SettingsStore.shared.checkForUpdatesAtLaunch.toggle() }
     @objc private func showSettings() { settingsWindowController.show() }
     @objc private func quit() { NSApp.terminate(nil) }
 
@@ -180,5 +172,11 @@ private extension NSMenu {
         item.target = target
         addItem(item)
         return item
+    }
+
+    func addItem(submenuTitled title: String, _ submenu: NSMenu) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        addItem(item)
     }
 }

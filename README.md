@@ -91,7 +91,7 @@ clicks, below every ordinary window so they never cover real work.
 Items store a bookmark alongside the path, so a shortcut keeps working when
 its file is moved or renamed. The path is the fallback when a bookmark can't
 be resolved. Items whose file no longer exists are drawn dimmed, and
-"Remove Missing Items" in the menu clears them.
+"Tools › Remove Missing Items" in the menu clears them.
 
 Layout follows list order, so panels are inherently gap-free — there is no
 grid snapping to configure, unlike Desktop Bins.
@@ -103,7 +103,7 @@ the bin and once loose on the desktop — so the file is moved into
 `~/Desktop Bins`, a folder in the home folder that nothing syncs. Removing the
 item from its bin, or deleting the bin, moves it back to the Desktop under its
 original name (numbered if that name has since been taken — nothing is ever
-overwritten). "Return All Files to Desktop…" in the menu is the catch-all, and
+overwritten). "Tools › Return All Files to Desktop…" in the menu is the catch-all, and
 "Show Desktop Bins Folder" opens the folder.
 
 Bins are local to each Mac. The layout lives in Application Support, and a
@@ -167,8 +167,8 @@ being hidden — plugging a laptop into a different set of monitors should not
 look like the panels were lost. Its stored pin is left untouched so it
 returns home when its own monitor comes back; it is only re-pinned if the
 user actually moves it. Offsets from a larger monitor are clamped into the
-fallback screen so a panel can't land off-screen. "Bring All Bins to Main
-Display" in the menu tiles everything onto the main display as an emergency
+fallback screen so a panel can't land off-screen. "Tools › Bring All Bins to
+Main Display…" in the menu tiles everything onto the main display as an emergency
 recovery.
 
 Each panel also remembers a separate arrangement per monitor setup, keyed by
