@@ -55,13 +55,24 @@ ln -s /Applications "${STAGING}/Applications"
 
 echo "Creating ${DMG_PATH}..."
 rm -f "${DMG_PATH}"
-hdiutil create \
-  -volname "${APP_NAME}" \
-  -srcfolder "${STAGING}" \
-  -fs HFS+ \
-  -format UDZO \
-  -ov \
-  "${DMG_PATH}" >/dev/null
+# hdiutil create is deprecated in macOS 27; diskutil image (macOS 26+) is the
+# replacement. It builds an APFS volume from a folder, which every supported
+# macOS (13+) mounts, including older installed updaters that use hdiutil.
+if diskutil image create from --help >/dev/null 2>&1; then
+  diskutil image create from \
+    --format UDZO \
+    --volumeName "${APP_NAME}" \
+    "${STAGING}" \
+    "${DMG_PATH}" >/dev/null
+else
+  hdiutil create \
+    -volname "${APP_NAME}" \
+    -srcfolder "${STAGING}" \
+    -fs HFS+ \
+    -format UDZO \
+    -ov \
+    "${DMG_PATH}" >/dev/null
+fi
 
 if [ -n "${SIGN_IDENTITY}" ]; then
   echo "Signing the disk image with: ${SIGN_IDENTITY}"
