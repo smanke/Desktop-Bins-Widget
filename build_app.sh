@@ -8,13 +8,30 @@ APP_NAME="Desktop Bins Widget"
 BUNDLE_ID="com.smanke.DesktopBinsWidget"
 APP_DIR=".build/app/${APP_NAME}.app"
 
+# Ask SwiftPM where this toolchain puts the product. The location has moved
+# between toolchains (.build/apple/Products/Release, then .build/out/Products/
+# Release with Swift 6.4), and an old toolchain's folder is left behind after an
+# upgrade. Hardcoding the old path packaged a days-old binary inside freshly
+# versioned 1.1.10 and 1.1.11 bundles: the version number changed, the code did not.
+BIN_DIR=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
+UNIVERSAL_BIN="${BIN_DIR}/DesktopBinsWidget"
+
+# Delete the product first, so whatever gets packaged was written by this run.
+# Checking "newer than the sources" instead would refuse valid builds: SwiftPM
+# doesn't relink when only a timestamp changes. With the old binary gone, even a
+# no-op incremental build writes it again and passes the check below.
+BUILD_STARTED=$(mktemp)
+trap 'rm -f "${BUILD_STARTED}"' EXIT
+rm -f "${UNIVERSAL_BIN}"
+
 echo "Building universal release binary (arm64 + x86_64)..."
 swift build -c release --arch arm64 --arch x86_64
 
-UNIVERSAL_BIN=".build/apple/Products/Release/DesktopBinsWidget"
-if [ ! -f "${UNIVERSAL_BIN}" ]; then
-  UNIVERSAL_BIN=$(find .build -path "*release/DesktopBinsWidget" -not -path "*.dSYM*" | head -n 1)
+if [ ! -x "${UNIVERSAL_BIN}" ] || [ ! "${UNIVERSAL_BIN}" -nt "${BUILD_STARTED}" ]; then
+  echo "ERROR: ${UNIVERSAL_BIN} was not written by this build; refusing to package it." >&2
+  exit 1
 fi
+echo "Packaging ${UNIVERSAL_BIN}"
 
 echo "Verifying architectures..."
 lipo -info "${UNIVERSAL_BIN}"
