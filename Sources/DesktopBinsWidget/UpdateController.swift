@@ -138,11 +138,24 @@ enum UpdateController {
         let dmg = staging.appendingPathComponent("update.dmg")
         try FileManager.default.moveItem(at: downloadedURL, to: dmg)
 
-        // Mount read-only and without opening a Finder window.
+        // Mount read-only and without opening a Finder window. hdiutil attach
+        // is deprecated in macOS 27; its replacement, diskutil image, first
+        // shipped in macOS 26, so older systems keep using hdiutil.
         let mountPoint = staging.appendingPathComponent("mount")
-        let attach = run("/usr/bin/hdiutil", ["attach", dmg.path, "-nobrowse", "-readonly", "-mountpoint", mountPoint.path])
+        let hasDiskutilImage = ProcessInfo.processInfo.isOperatingSystemAtLeast(
+            OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0))
+        let attach = hasDiskutilImage
+            ? run("/usr/sbin/diskutil", ["image", "attach", "--readOnly", "--mountOptions", "nobrowse",
+                                         "--mountPoint", mountPoint.path, dmg.path])
+            : run("/usr/bin/hdiutil", ["attach", dmg.path, "-nobrowse", "-readonly", "-mountpoint", mountPoint.path])
         guard attach.status == 0 else { throw fail("The downloaded disk image could not be opened.") }
-        defer { run("/usr/bin/hdiutil", ["detach", mountPoint.path, "-quiet"]) }
+        defer {
+            if hasDiskutilImage {
+                run("/usr/sbin/diskutil", ["eject", mountPoint.path])
+            } else {
+                run("/usr/bin/hdiutil", ["detach", mountPoint.path, "-quiet"])
+            }
+        }
 
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: mountPoint.path)) ?? []
         guard let appName = contents.first(where: { $0.hasSuffix(".app") }) else {
