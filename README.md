@@ -72,6 +72,13 @@ Requires macOS 13+. Signs with a Developer ID identity when one is present
 `./make_dmg.sh` packages the stapled app into a signed, notarized `.dmg`
 with the usual drag-to-Applications layout.
 
+The image opens as a 600x400 window with 128px icons, the app on the left and Applications
+on the right. That layout ships as a captured `.DS_Store` (`Resources/dmg/DS_Store`) which
+`make_dmg.sh` copies into the staging folder, rather than being applied by driving Finder
+during a release; recapture it with `Tools/capture_dmg_layout.sh` if the window changes.
+There is no background picture: on macOS 27 Finder shows one only while it is dropped into
+the View Options picture well by hand and discards it when the window closes.
+
 ## Implementation notes
 
 ### No Finder dependency
